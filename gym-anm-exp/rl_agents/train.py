@@ -84,19 +84,10 @@ try:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device} device")
 
-    model_kwargs = {}
-    if ALGO == PPO:
-        model_kwargs["n_steps"] = N_STEPS
-        model_kwargs["batch_size"] = BATCH_SIZE
-    elif ALGO == SAC:
-        model_kwargs["train_freq"] = TRAIN_FREQ
-        model_kwargs["batch_size"] = BATCH_SIZE
 
-    print(f"Using model kwargs: {model_kwargs}")
 
     model = ALGO(POLICY, train_env, gamma=GAMMA, verbose=1, 
-                 tensorboard_log=TENSORBOARD_LOG, device=device,
-                 **model_kwargs) # <-- Pass the new kwargs here
+                 tensorboard_log=TENSORBOARD_LOG, device=device)
     
     # --- END OF MODIFIED BLOCK ---
 
