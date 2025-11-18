@@ -16,7 +16,7 @@ The script can be run as follows: ::
     $ python -m mpc_policies.run_mpc <ENV_ID> <POLICY> -T <T> -s <SEED> -o <OUTPUT_FILE>
 """
 
-import gym
+import gymnasium as gym
 from time import time
 import argparse
 

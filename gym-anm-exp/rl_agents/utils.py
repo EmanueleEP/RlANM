@@ -75,27 +75,30 @@ def load_training_env(env_id, env_path, log_dir, max_train_ep_length, seed, n_en
 
 
 def load_visualization_env(env_id, env_path, seed=0):
-    # """
-    # Create an environment using the saved statistics of the training vectorized
-    # env (used to visualize performance).
-    # """
-    # env = gym.make(env_id)
-    # env.seed(seed)
-    # env = Monitor(env)  # Used to ensure original action space is not modified by `NormalizeActionWrapper`
-    # env = NormalizeActionWrapper(env)
-    # env = DummyVecEnv([lambda: env])
-    # env = VecNormalize.load(env_path, env)
-
-    # return env
-
-    env = gym.make(env_id)
-    env.reset(seed=seed)                                    # Set random seed (FIXED)
-    env = Monitor(env)  # Used to ensure original action space is not modified by `NormalizeActionWrapper`
-    env = NormalizeActionWrapper(env)
-    env = DummyVecEnv([lambda: env])
+    """
+    Create an environment using the saved statistics of the training vectorized
+    env (used to visualize performance).
+    """
+    def make_env():
+        env = gym.make(env_id)
+        env = Monitor(env)
+        env = NormalizeActionWrapper(env)
+        return env
+    
+    # Create vectorized environment with seed set after creation
+    env = DummyVecEnv([make_env])
+    
+    # Load the saved normalization statistics
     env = VecNormalize.load(env_path, env)
-
+    # Set training to False and don't normalize rewards during visualization
+    env.training = False
+    env.norm_reward = False
+    
+    # Reset with seed
+    env.seed(seed)
+    
     return env
+
 
 
 def save_hyperparameters(log_dir, params):

@@ -17,7 +17,7 @@ N_EVAL_EPISODES = 5
 MAX_EVAL_EP_LENGTH = 3000
 
 # new parameter
-N_ENVS = 3  # number of parallel environments
+N_ENVS = 2  # number of parallel environments
 
 LOG_DIR = BASE_DIR + ENV_ID + '/'
 os.makedirs(LOG_DIR, exist_ok=True)
