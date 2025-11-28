@@ -3,8 +3,30 @@ This file contains the hyperparameter values used for training and
 testing RL agents.
 """
 import os
+import sys
 
-BASE_DIR = '/results/'
+def is_colab():
+    try:
+        from google.colab import drive  # noinspection PyUnresolvedReference
+        return True
+    except ImportError:
+        return False
+
+# Set BASE_DIR based on environment
+if is_colab():
+    BASE_DIR = '/content/drive/MyDrive/UNI/Tesi/gym-anm-results/'
+    # Opzionale: monta Google Drive automaticamente
+    try:
+        from google.colab import drive
+        drive.mount('/content/drive')
+        print("Google Drive montato con successo!")
+    except Exception as e:
+        print(f"Errore nel montaggio di Google Drive: {e}")
+else:
+    BASE_DIR = './results/'
+    print("local run")
+
+
 
 ENV_ID = 'gym_anm:ANM6Easy-v0'
 GAMMA = 0.995
