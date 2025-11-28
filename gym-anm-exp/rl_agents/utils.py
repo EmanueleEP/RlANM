@@ -13,7 +13,7 @@ from stable_baselines3.common.monitor import Monitor
 
 from .wrappers import NormalizeActionWrapper, TimeLimitWrapper
 
-from gym_anm.envs.anm6_env_test import anm6_easy_test # added custom environment!!!!
+#from gym_anm.envs.anm6_env_test import anm6_easy_test # added custom environment!!!!
 
 def make_envs(env_id, log_dir, gamma, max_train_ep_length, max_eval_ep_length, seed, n_envs):
     """Return properly vectorized training and evaluation environments."""
