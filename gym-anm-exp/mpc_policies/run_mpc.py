@@ -84,13 +84,11 @@ def run_baseline(env_id, policy, safety_margin, planning_steps, T,
 
     # Initialize the environment ready.
     env = gym.make(env_id)
-    gamma = env.gamma
-    if seed is not None:
-        env.seed(seed)
-    env.reset()
+    gamma = env.unwrapped.gamma
+    env.reset(seed=seed)
 
     # Initialize the MPC policy.
-    agent = policy(env.simulator, env.action_space, gamma,
+    agent = policy(env.unwrapped.simulator, env.action_space, gamma,
                    safety_margin=safety_margin,
                    planning_steps=planning_steps)
 
@@ -99,8 +97,11 @@ def run_baseline(env_id, policy, safety_margin, planning_steps, T,
     total_reward = 0.
     start = time()
     for i in range(T):
-        a = agent.act(env)
-        obs, r, done, _ = env.step(a)
+        #a = agent.act(env)
+        a = agent.act(env.unwrapped)
+
+        obs, r, terminated, truncated, _ = env.step(a)
+        done = terminated or truncated
 
         ret += gamma ** i * r
         total_reward += r

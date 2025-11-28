@@ -109,7 +109,7 @@ def print_step_info(step, action, obs, reward, done, anm_env):
         sim = anm_env.simulator
         action_idx = 0
 
-        print("  (Each row shows: RAW action → Physical setpoint (MW/MVAr) → Limit status)\n")
+        print("  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)\n")
 
         for dev_id, dev in sim.devices.items():
             dev_type = type(dev).__name__
@@ -259,10 +259,8 @@ def visualize(path, algo, T, sleep_time, print_steps):
     log_file = open(log_filename, 'w')
 
     print()
-    print("IMPORTANT: gym-anm environments render in a WEB BROWSER")
+    print("IMPORTANT: gym-anm environments render in a BROWSER")
     print("'Running on http://127.0.0.1:8050/'")
-    print("\nStarting visualization in 3 seconds")
-    time.sleep(3)
 
     anm_env = get_anm_env(env)
 

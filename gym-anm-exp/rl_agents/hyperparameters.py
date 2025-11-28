@@ -7,7 +7,7 @@ import os
 
 
 BASE_DIR = './results/'
-ENV_ID = 'gym_anm:ANM6Easy-v0'
+ENV_ID = 'gym_anm:ANM6Easy-v0_test'
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
 TRAIN_STEPS = 3000
