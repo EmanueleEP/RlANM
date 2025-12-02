@@ -1,0 +1,2050 @@
+
+Initializing web server...
+
+
+ENVIRONMENT INFORMATION
+
+
+
+ACTION SPACE:
+  Type: <class 'gymnasium.spaces.box.Box'>
+  Shape: (6,)
+
+  Each action dimension corresponds to a controllable device:
+
+  Device 2 (RenewableGen):
+    Action[0] → P: range (0.0, 30.0) MW
+    Action[1] → Q: range (-30.0, 30.0) MVAr
+  Device 4 (RenewableGen):
+    Action[2] → P: range (0.0, 50.0) MW
+    Action[3] → Q: range (-50.0, 50.0) MVAr
+  Device 6 (StorageUnit):
+    Action[4] → P: range (-50.0, 50.0) MW
+    Action[5] → Q: range (-50.0, 50.0) MVAr
+
+CONTROLLABLE DEVICES:
+  Device 2 (RenewableGen): P=[0.00, 30.00] MW, Q=[-30.00, 30.00] MVAr
+  Device 4 (RenewableGen): P=[0.00, 50.00] MW, Q=[-50.00, 50.00] MVAr
+  Device 6 (StorageUnit): P=[-50.00, 50.00] MW, Q=[-50.00, 50.00] MVAr
+
+BUSES (Voltage Measurement Points):
+  Bus 0 (Slack): V=[1.000, 1.000] p.u., BaseKV=132.0
+  Bus 1 (PQ): V=[0.900, 1.100] p.u., BaseKV=33.0
+  Bus 2 (PQ): V=[0.900, 1.100] p.u., BaseKV=33.0
+  Bus 3 (PQ): V=[0.900, 1.100] p.u., BaseKV=33.0
+  Bus 4 (PQ): V=[0.900, 1.100] p.u., BaseKV=33.0
+  Bus 5 (PQ): V=[0.900, 1.100] p.u., BaseKV=33.0
+
+LOADS:
+  Device 1: Connected to Bus 3
+  Device 3: Connected to Bus 4
+  Device 5: Connected to Bus 5
+
+
+
+#######################
+Rendering the environment at : http://127.0.0.1:8000/envs/anm6_env/rendering
+#######################
+
+
+Starting agent interaction...
+
+
+STEP 1
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.298 → 19.46 MW  
+                          Q: raw=+0.936 → 28.09 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.340 → 33.51 MW  
+                          Q: raw=+0.261 → 13.05 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.163 → 8.14 MW  
+                          Q: raw=+0.058 → 2.92 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0332 p.u. - status: OK
+  Bus 2 (PQ): 1.0325 p.u. - status: OK
+  Bus 3 (PQ): 1.0411 p.u. - status: OK
+  Bus 4 (PQ): 1.0404 p.u. - status: OK
+  Bus 5 (PQ): 1.0297 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=1.767 MW, Q=-18.149 MVAr
+  Device 1 (Load): P=-4.250 MW, Q=-0.850 MVAr
+  Device 2 (RenewableGen): P=12.167 MW, Q=10.208 MVAr
+  Device 3 (Load): P=-12.500 MW, Q=-2.500 MVAr
+  Device 4 (RenewableGen): P=18.333 MW, Q=13.051 MVAr
+  Device 5 (Load): P=-18.750 MW, Q=-3.750 MVAr
+  Device 6 (StorageUnit): P=3.415 MW, Q=2.916 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=18.840 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=13.517 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-12.258 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-12.057 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=15.399 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: 0.0081
+DONE: False
+
+
+STEP 2
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.144 → 12.85 MW  
+                          Q: raw=+0.957 → 28.70 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.138 → 21.54 MW  
+                          Q: raw=+0.064 → 3.18 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.459 → 22.97 MW  
+                          Q: raw=+0.154 → 7.72 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9998 p.u. - status: OK
+  Bus 2 (PQ): 0.9986 p.u. - status: OK
+  Bus 3 (PQ): 0.9994 p.u. - status: OK
+  Bus 4 (PQ): 1.0013 p.u. - status: OK
+  Bus 5 (PQ): 0.9984 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-1.419 MW, Q=0.162 MVAr
+  Device 1 (Load): P=-3.875 MW, Q=-0.775 MVAr
+  Device 2 (RenewableGen): P=12.847 MW, Q=-4.152 MVAr
+  Device 3 (Load): P=-13.750 MW, Q=-2.750 MVAr
+  Device 4 (RenewableGen): P=21.942 MW, Q=3.179 MVAr
+  Device 5 (Load): P=-15.625 MW, Q=-3.125 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=7.722 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-1.429 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=8.940 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-10.239 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-8.203 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=16.291 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0109
+DONE: False
+
+
+STEP 3
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.235 → 11.48 MW  
+                          Q: raw=+0.940 → 28.20 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.169 → 20.77 MW  
+                          Q: raw=+0.071 → 3.55 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.475 → 23.76 MW  
+                          Q: raw=+0.108 → 5.42 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9955 p.u. - status: OK
+  Bus 2 (PQ): 0.9956 p.u. - status: OK
+  Bus 3 (PQ): 0.9943 p.u. - status: OK
+  Bus 4 (PQ): 0.9991 p.u. - status: OK
+  Bus 5 (PQ): 0.9951 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-5.931 MW, Q=2.608 MVAr
+  Device 1 (Load): P=-3.500 MW, Q=-0.700 MVAr
+  Device 2 (RenewableGen): P=11.478 MW, Q=-5.080 MVAr
+  Device 3 (Load): P=-15.000 MW, Q=-3.000 MVAr
+  Device 4 (RenewableGen): P=25.550 MW, Q=3.547 MVAr
+  Device 5 (Load): P=-12.500 MW, Q=-2.500 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.419 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-6.479 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=3.876 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-9.863 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-10.564 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=12.843 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0265
+DONE: False
+
+
+STEP 4
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.275 → 10.88 MW  
+                          Q: raw=+0.886 → 26.58 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.075 → 23.11 MW  
+                          Q: raw=+0.015 → 0.77 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.679 → 33.94 MW  
+                          Q: raw=+0.101 → 5.05 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9958 p.u. - status: OK
+  Bus 2 (PQ): 0.9969 p.u. - status: OK
+  Bus 3 (PQ): 0.9964 p.u. - status: OK
+  Bus 4 (PQ): 0.9993 p.u. - status: OK
+  Bus 5 (PQ): 0.9970 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-11.190 MW, Q=2.633 MVAr
+  Device 1 (Load): P=-3.125 MW, Q=-0.625 MVAr
+  Device 2 (RenewableGen): P=10.880 MW, Q=-2.263 MVAr
+  Device 3 (Load): P=-16.250 MW, Q=-3.250 MVAr
+  Device 4 (RenewableGen): P=29.158 MW, Q=0.772 MVAr
+  Device 5 (Load): P=-9.375 MW, Q=-1.875 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.052 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-11.496 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-3.508 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.275 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-13.144 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=9.898 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0403
+DONE: False
+
+
+STEP 5
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.396 → 9.07 MW  
+                          Q: raw=+0.728 → 21.85 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.014 → 24.64 MW  
+                          Q: raw=-0.004 → -0.21 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.831 → 41.55 MW  
+                          Q: raw=+0.088 → 4.42 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9970 p.u. - status: OK
+  Bus 2 (PQ): 0.9995 p.u. - status: OK
+  Bus 3 (PQ): 0.9983 p.u. - status: OK
+  Bus 4 (PQ): 1.0018 p.u. - status: OK
+  Bus 5 (PQ): 1.0001 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-15.204 MW, Q=2.174 MVAr
+  Device 1 (Load): P=-2.750 MW, Q=-0.550 MVAr
+  Device 2 (RenewableGen): P=9.065 MW, Q=-0.433 MVAr
+  Device 3 (Load): P=-17.500 MW, Q=-3.500 MVAr
+  Device 4 (RenewableGen): P=32.767 MW, Q=-0.210 MVAr
+  Device 5 (Load): P=-6.250 MW, Q=-1.250 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=4.420 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-15.359 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-8.963 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-6.391 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.711 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=7.008 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0527
+DONE: False
+
+
+STEP 6
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.441 → 8.38 MW  
+                          Q: raw=+0.349 → 10.47 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.023 → 25.57 MW  
+                          Q: raw=+0.013 → 0.67 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.908 → 45.40 MW  
+                          Q: raw=+0.064 → 3.19 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9992 p.u. - status: OK
+  Bus 2 (PQ): 1.0025 p.u. - status: OK
+  Bus 3 (PQ): 1.0011 p.u. - status: OK
+  Bus 4 (PQ): 1.0051 p.u. - status: OK
+  Bus 5 (PQ): 1.0033 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-17.727 MW, Q=1.088 MVAr
+  Device 1 (Load): P=-2.375 MW, Q=-0.475 MVAr
+  Device 2 (RenewableGen): P=8.384 MW, Q=0.683 MVAr
+  Device 3 (Load): P=-18.750 MW, Q=-3.750 MVAr
+  Device 4 (RenewableGen): P=33.729 MW, Q=0.671 MVAr
+  Device 5 (Load): P=-3.125 MW, Q=-0.625 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=3.188 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-17.760 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-11.800 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-6.013 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.293 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.042 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0610
+DONE: False
+
+
+STEP 7
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.381 → 9.29 MW  
+                          Q: raw=+0.322 → 9.65 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.061 → 26.53 MW  
+                          Q: raw=+0.062 → 3.12 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.915 → 45.73 MW  
+                          Q: raw=-0.006 → -0.29 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0002 p.u. - status: OK
+  Bus 2 (PQ): 1.0038 p.u. - status: OK
+  Bus 3 (PQ): 1.0033 p.u. - status: OK
+  Bus 4 (PQ): 1.0072 p.u. - status: OK
+  Bus 5 (PQ): 1.0037 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-20.192 MW, Q=0.654 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=9.286 MW, Q=1.834 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=33.039 MW, Q=3.121 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-0.286 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-20.206 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-13.050 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-7.425 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-13.069 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=0.286 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0695
+DONE: False
+
+
+STEP 8
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.313 → 10.31 MW  
+                          Q: raw=+0.385 → 11.56 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.168 → 29.19 MW  
+                          Q: raw=+0.137 → 6.83 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.841 → 42.03 MW  
+                          Q: raw=-0.086 → -4.31 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0052 p.u. - status: OK
+  Bus 2 (PQ): 1.0092 p.u. - status: OK
+  Bus 3 (PQ): 1.0106 p.u. - status: OK
+  Bus 4 (PQ): 1.0153 p.u. - status: OK
+  Bus 5 (PQ): 1.0071 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.765 MW, Q=-1.942 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=10.308 MW, Q=5.029 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=34.635 MW, Q=6.827 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.313 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.968 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-14.657 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-9.510 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-14.905 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.323 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0631
+DONE: False
+
+
+STEP 9
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.330 → 10.05 MW  
+                          Q: raw=+0.387 → 11.60 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.159 → 28.98 MW  
+                          Q: raw=+0.132 → 6.61 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.839 → 41.93 MW  
+                          Q: raw=-0.090 → -4.49 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0041 p.u. - status: OK
+  Bus 2 (PQ): 1.0080 p.u. - status: OK
+  Bus 3 (PQ): 1.0092 p.u. - status: OK
+  Bus 4 (PQ): 1.0139 p.u. - status: OK
+  Bus 5 (PQ): 1.0058 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.550 MW, Q=-1.332 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=10.055 MW, Q=4.780 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=34.671 MW, Q=6.613 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=-4.486 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.682 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-14.741 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-9.169 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-14.903 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.496 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0636
+DONE: False
+
+
+STEP 10
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.335 → 9.97 MW  
+                          Q: raw=+0.389 → 11.66 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.152 → 28.81 MW  
+                          Q: raw=+0.131 → 6.55 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.833 → 41.67 MW  
+                          Q: raw=-0.089 → -4.43 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0037 p.u. - status: OK
+  Bus 2 (PQ): 1.0076 p.u. - status: OK
+  Bus 3 (PQ): 1.0087 p.u. - status: OK
+  Bus 4 (PQ): 1.0135 p.u. - status: OK
+  Bus 5 (PQ): 1.0054 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.511 MW, Q=-1.113 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=9.970 MW, Q=4.569 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=34.717 MW, Q=6.545 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.431 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.622 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-14.788 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.995 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-14.936 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.440 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0637
+DONE: False
+
+
+STEP 11
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.342 → 9.88 MW  
+                          Q: raw=+0.390 → 11.69 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.144 → 28.60 MW  
+                          Q: raw=+0.129 → 6.46 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.829 → 41.47 MW  
+                          Q: raw=-0.088 → -4.38 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0032 p.u. - status: OK
+  Bus 2 (PQ): 1.0071 p.u. - status: OK
+  Bus 3 (PQ): 1.0080 p.u. - status: OK
+  Bus 4 (PQ): 1.0130 p.u. - status: OK
+  Bus 5 (PQ): 1.0049 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.445 MW, Q=-0.837 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=9.876 MW, Q=4.322 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=34.744 MW, Q=6.457 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=-4.381 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.532 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-14.820 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.799 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-14.948 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.391 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0639
+DONE: False
+
+
+STEP 12
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.348 → 9.78 MW  
+                          Q: raw=+0.391 → 11.73 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.136 → 28.40 MW  
+                          Q: raw=+0.127 → 6.37 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.825 → 41.25 MW  
+                          Q: raw=-0.087 → -4.33 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0027 p.u. - status: OK
+  Bus 2 (PQ): 1.0066 p.u. - status: OK
+  Bus 3 (PQ): 1.0073 p.u. - status: OK
+  Bus 4 (PQ): 1.0124 p.u. - status: OK
+  Bus 5 (PQ): 1.0044 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.383 MW, Q=-0.564 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=9.785 MW, Q=4.078 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=34.773 MW, Q=6.370 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.330 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.450 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-14.854 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.610 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-14.963 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.339 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0640
+DONE: False
+
+
+STEP 13
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.354 → 9.69 MW  
+                          Q: raw=+0.392 → 11.76 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.128 → 28.19 MW  
+                          Q: raw=+0.126 → 6.28 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.821 → 41.03 MW  
+                          Q: raw=-0.086 → -4.28 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0022 p.u. - status: OK
+  Bus 2 (PQ): 1.0061 p.u. - status: OK
+  Bus 3 (PQ): 1.0066 p.u. - status: OK
+  Bus 4 (PQ): 1.0119 p.u. - status: OK
+  Bus 5 (PQ): 1.0039 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.321 MW, Q=-0.289 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=9.694 MW, Q=3.832 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=34.802 MW, Q=6.283 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=-4.278 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.372 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-14.887 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.425 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-14.977 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.288 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0642
+DONE: False
+
+
+STEP 14
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.353 → 9.71 MW  
+                          Q: raw=+0.396 → 11.88 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.122 → 28.04 MW  
+                          Q: raw=+0.124 → 6.21 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.816 → 40.81 MW  
+                          Q: raw=-0.085 → -4.23 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0018 p.u. - status: OK
+  Bus 2 (PQ): 1.0057 p.u. - status: OK
+  Bus 3 (PQ): 1.0061 p.u. - status: OK
+  Bus 4 (PQ): 1.0115 p.u. - status: OK
+  Bus 5 (PQ): 1.0036 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.437 MW, Q=-0.061 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=9.711 MW, Q=3.646 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=34.902 MW, Q=6.206 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=-4.231 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.477 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-14.990 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.367 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.065 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.240 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0639
+DONE: False
+
+
+STEP 15
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.347 → 9.80 MW  
+                          Q: raw=+0.401 → 12.04 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.116 → 27.90 MW  
+                          Q: raw=+0.123 → 6.13 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.812 → 40.62 MW  
+                          Q: raw=-0.084 → -4.19 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0014 p.u. - status: OK
+  Bus 2 (PQ): 1.0054 p.u. - status: OK
+  Bus 3 (PQ): 1.0057 p.u. - status: OK
+  Bus 4 (PQ): 1.0111 p.u. - status: OK
+  Bus 5 (PQ): 1.0033 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.649 MW, Q=0.156 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=9.795 MW, Q=3.486 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=35.032 MW, Q=6.125 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.188 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.681 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-15.123 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.384 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.182 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.197 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0634
+DONE: False
+
+
+STEP 16
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.338 → 9.94 MW  
+                          Q: raw=+0.405 → 12.14 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.112 → 27.81 MW  
+                          Q: raw=+0.121 → 6.05 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.809 → 40.46 MW  
+                          Q: raw=-0.083 → -4.15 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0011 p.u. - status: OK
+  Bus 2 (PQ): 1.0051 p.u. - status: OK
+  Bus 3 (PQ): 1.0053 p.u. - status: OK
+  Bus 4 (PQ): 1.0108 p.u. - status: OK
+  Bus 5 (PQ): 1.0030 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-22.869 MW, Q=0.334 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=9.936 MW, Q=3.368 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=35.113 MW, Q=6.047 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.148 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-22.896 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-15.209 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.473 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.252 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.157 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0628
+DONE: False
+
+
+STEP 17
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.322 → 10.18 MW  
+                          Q: raw=+0.407 → 12.21 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.113 → 27.82 MW  
+                          Q: raw=+0.121 → 6.06 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.806 → 40.29 MW  
+                          Q: raw=-0.083 → -4.15 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0011 p.u. - status: OK
+  Bus 2 (PQ): 1.0051 p.u. - status: OK
+  Bus 3 (PQ): 1.0054 p.u. - status: OK
+  Bus 4 (PQ): 1.0109 p.u. - status: OK
+  Bus 5 (PQ): 1.0030 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-23.167 MW, Q=0.344 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=10.176 MW, Q=3.379 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=35.175 MW, Q=6.060 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.154 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-23.195 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-15.268 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.702 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.314 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.162 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0621
+DONE: False
+
+
+STEP 18
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.305 → 10.42 MW  
+                          Q: raw=+0.410 → 12.29 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.113 → 27.82 MW  
+                          Q: raw=+0.121 → 6.07 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.803 → 40.14 MW  
+                          Q: raw=-0.083 → -4.17 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0011 p.u. - status: OK
+  Bus 2 (PQ): 1.0051 p.u. - status: OK
+  Bus 3 (PQ): 1.0055 p.u. - status: OK
+  Bus 4 (PQ): 1.0109 p.u. - status: OK
+  Bus 5 (PQ): 1.0030 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-23.470 MW, Q=0.380 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=10.419 MW, Q=3.383 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=35.238 MW, Q=6.068 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.172 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-23.498 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-15.332 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-8.932 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.378 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.180 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0613
+DONE: False
+
+
+STEP 19
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.289 → 10.66 MW  
+                          Q: raw=+0.412 → 12.36 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.113 → 27.82 MW  
+                          Q: raw=+0.122 → 6.08 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.800 → 39.99 MW  
+                          Q: raw=-0.084 → -4.19 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0010 p.u. - status: OK
+  Bus 2 (PQ): 1.0051 p.u. - status: OK
+  Bus 3 (PQ): 1.0055 p.u. - status: OK
+  Bus 4 (PQ): 1.0109 p.u. - status: OK
+  Bus 5 (PQ): 1.0030 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-23.775 MW, Q=0.417 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=10.664 MW, Q=3.387 MVAr
+  Device 3 (Load): P=-20.000 MW, Q=-4.000 MVAr
+  Device 4 (RenewableGen): P=35.301 MW, Q=6.075 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=-4.189 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-23.803 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-15.395 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-9.164 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.441 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=4.198 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0606
+DONE: False
+
+
+STEP 20
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.273 → 10.91 MW  
+                          Q: raw=+0.415 → 12.44 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.113 → 27.83 MW  
+                          Q: raw=+0.122 → 6.08 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.797 → 39.84 MW  
+                          Q: raw=-0.084 → -4.21 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0002 p.u. - status: OK
+  Bus 2 (PQ): 1.0037 p.u. - status: OK
+  Bus 3 (PQ): 1.0046 p.u. - status: OK
+  Bus 4 (PQ): 1.0100 p.u. - status: OK
+  Bus 5 (PQ): 1.0007 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-21.839 MW, Q=0.734 MVAr
+  Device 1 (Load): P=-2.375 MW, Q=-0.475 MVAr
+  Device 2 (RenewableGen): P=10.912 MW, Q=3.391 MVAr
+  Device 3 (Load): P=-18.750 MW, Q=-3.750 MVAr
+  Device 4 (RenewableGen): P=35.363 MW, Q=6.083 MVAr
+  Device 5 (Load): P=-3.125 MW, Q=-0.625 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.207 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-21.857 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-13.666 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-9.021 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-16.777 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=5.771 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0507
+DONE: False
+
+
+STEP 21
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.186 → 12.21 MW  
+                          Q: raw=+0.605 → 18.14 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.095 → 27.37 MW  
+                          Q: raw=+0.119 → 5.95 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.734 → 36.71 MW  
+                          Q: raw=-0.067 → -3.34 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9999 p.u. - status: OK
+  Bus 2 (PQ): 1.0021 p.u. - status: OK
+  Bus 3 (PQ): 1.0042 p.u. - status: OK
+  Bus 4 (PQ): 1.0081 p.u. - status: OK
+  Bus 5 (PQ): 0.9988 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-18.334 MW, Q=0.712 MVAr
+  Device 1 (Load): P=-2.750 MW, Q=-0.550 MVAr
+  Device 2 (RenewableGen): P=12.214 MW, Q=2.845 MVAr
+  Device 3 (Load): P=-17.500 MW, Q=-3.500 MVAr
+  Device 4 (RenewableGen): P=32.767 MW, Q=5.947 MVAr
+  Device 5 (Load): P=-6.250 MW, Q=-1.250 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-3.336 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-18.348 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-9.230 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-9.739 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-15.462 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=7.778 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0448
+DONE: False
+
+
+STEP 22
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.150 → 12.75 MW  
+                          Q: raw=+0.846 → 25.38 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.067 → 26.68 MW  
+                          Q: raw=+0.134 → 6.68 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.610 → 30.48 MW  
+                          Q: raw=-0.081 → -4.03 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9977 p.u. - status: OK
+  Bus 2 (PQ): 0.9982 p.u. - status: OK
+  Bus 3 (PQ): 1.0015 p.u. - status: OK
+  Bus 4 (PQ): 1.0042 p.u. - status: OK
+  Bus 5 (PQ): 0.9937 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-13.042 MW, Q=1.644 MVAr
+  Device 1 (Load): P=-3.125 MW, Q=-0.625 MVAr
+  Device 2 (RenewableGen): P=12.748 MW, Q=2.011 MVAr
+  Device 3 (Load): P=-16.250 MW, Q=-3.250 MVAr
+  Device 4 (RenewableGen): P=29.158 MW, Q=6.675 MVAr
+  Device 5 (Load): P=-9.375 MW, Q=-1.875 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-4.031 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-13.145 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-4.359 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-9.722 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-13.355 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=11.130 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0357
+DONE: False
+
+
+STEP 23
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.058 → 15.88 MW  
+                          Q: raw=+0.906 → 27.19 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.050 → 26.24 MW  
+                          Q: raw=+0.161 → 8.04 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.306 → 15.29 MW  
+                          Q: raw=-0.074 → -3.69 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9990 p.u. - status: OK
+  Bus 2 (PQ): 0.9981 p.u. - status: OK
+  Bus 3 (PQ): 1.0033 p.u. - status: OK
+  Bus 4 (PQ): 1.0044 p.u. - status: OK
+  Bus 5 (PQ): 0.9930 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-10.301 MW, Q=0.833 MVAr
+  Device 1 (Load): P=-3.500 MW, Q=-0.700 MVAr
+  Device 2 (RenewableGen): P=15.876 MW, Q=1.487 MVAr
+  Device 3 (Load): P=-15.000 MW, Q=-3.000 MVAr
+  Device 4 (RenewableGen): P=25.550 MW, Q=8.042 MVAr
+  Device 5 (Load): P=-12.500 MW, Q=-2.500 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=-3.688 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-10.335 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=2.421 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-12.401 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-11.693 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=14.020 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0156
+DONE: False
+
+
+STEP 24
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.163 → 17.44 MW  
+                          Q: raw=+0.874 → 26.22 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.039 → 25.97 MW  
+                          Q: raw=+0.206 → 10.32 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.221 → 11.04 MW  
+                          Q: raw=-0.045 → -2.26 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0042 p.u. - status: OK
+  Bus 2 (PQ): 1.0024 p.u. - status: OK
+  Bus 3 (PQ): 1.0085 p.u. - status: OK
+  Bus 4 (PQ): 1.0095 p.u. - status: OK
+  Bus 5 (PQ): 0.9972 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-5.622 MW, Q=-2.172 MVAr
+  Device 1 (Load): P=-3.875 MW, Q=-0.775 MVAr
+  Device 2 (RenewableGen): P=17.083 MW, Q=1.164 MVAr
+  Device 3 (Load): P=-13.750 MW, Q=-2.750 MVAr
+  Device 4 (RenewableGen): P=21.942 MW, Q=10.318 MVAr
+  Device 5 (Load): P=-15.625 MW, Q=-3.125 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=-2.262 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-6.053 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=7.782 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-13.214 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-11.153 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=16.614 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0004
+DONE: False
+
+
+STEP 25
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.293 → 19.40 MW  
+                          Q: raw=+0.901 → 27.04 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.019 → 25.49 MW  
+                          Q: raw=+0.216 → 10.80 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.212 → 10.61 MW  
+                          Q: raw=-0.019 → -0.95 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0053 p.u. - status: OK
+  Bus 2 (PQ): 1.0021 p.u. - status: OK
+  Bus 3 (PQ): 1.0075 p.u. - status: OK
+  Bus 4 (PQ): 1.0089 p.u. - status: OK
+  Bus 5 (PQ): 0.9967 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=5.164 MW, Q=-2.943 MVAr
+  Device 1 (Load): P=-4.250 MW, Q=-0.850 MVAr
+  Device 2 (RenewableGen): P=12.167 MW, Q=0.583 MVAr
+  Device 3 (Load): P=-12.500 MW, Q=-2.500 MVAr
+  Device 4 (RenewableGen): P=18.333 MW, Q=10.798 MVAr
+  Device 5 (Load): P=-18.750 MW, Q=-3.750 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=-0.945 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=5.975 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=13.475 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-7.921 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-10.143 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=19.433 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -0.3588
+DONE: False
+
+
+STEP 26
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.297 → 19.45 MW  
+                          Q: raw=+0.945 → 28.35 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.085 → 27.13 MW  
+                          Q: raw=+0.107 → 5.34 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.247 → 12.35 MW  
+                          Q: raw=+0.081 → 4.06 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0064 p.u. - status: OK
+  Bus 2 (PQ): 1.0014 p.u. - status: OK
+  Bus 3 (PQ): 1.0082 p.u. - status: OK
+  Bus 4 (PQ): 1.0043 p.u. - status: OK
+  Bus 5 (PQ): 0.9977 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=15.974 MW, Q=-3.565 MVAr
+  Device 1 (Load): P=-4.625 MW, Q=-0.925 MVAr
+  Device 2 (RenewableGen): P=7.250 MW, Q=2.550 MVAr
+  Device 3 (Load): P=-11.250 MW, Q=-2.250 MVAr
+  Device 4 (RenewableGen): P=14.725 MW, Q=5.336 MVAr
+  Device 5 (Load): P=-21.875 MW, Q=-4.375 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=4.055 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=16.472 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=18.746 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=-3.088 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-4.648 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=21.959 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -0.9901
+DONE: False
+
+
+STEP 27
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.281 → 19.22 MW  
+                          Q: raw=+0.970 → 29.11 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.208 → 30.20 MW  
+                          Q: raw=+0.013 → 0.63 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.067 → 3.35 MW  
+                          Q: raw=+0.103 → 5.14 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0045 p.u. - status: OK
+  Bus 2 (PQ): 0.9969 p.u. - status: OK
+  Bus 3 (PQ): 1.0074 p.u. - status: OK
+  Bus 4 (PQ): 0.9963 p.u. - status: OK
+  Bus 5 (PQ): 0.9929 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.310 MW, Q=-2.358 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=6.238 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.631 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=5.140 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.533 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.336 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=5.333 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-1.696 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.101 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7761
+DONE: False
+
+
+STEP 28
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.047 → 15.71 MW  
+                          Q: raw=+0.533 → 15.99 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.126 → 28.15 MW  
+                          Q: raw=+0.009 → 0.44 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.042 → 2.11 MW  
+                          Q: raw=+0.106 → 5.30 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0000 p.u. - status: OK
+  Bus 2 (PQ): 0.9923 p.u. - status: OK
+  Bus 3 (PQ): 1.0014 p.u. - status: OK
+  Bus 4 (PQ): 0.9917 p.u. - status: OK
+  Bus 5 (PQ): 0.9884 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.306 MW, Q=0.111 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=3.778 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.441 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.305 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.307 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.341 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=2.952 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-1.854 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.102 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7762
+DONE: False
+
+
+STEP 29
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.038 → 15.58 MW  
+                          Q: raw=+0.520 → 15.59 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.133 → 28.32 MW  
+                          Q: raw=+0.005 → 0.27 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.038 → 1.91 MW  
+                          Q: raw=+0.105 → 5.25 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9999 p.u. - status: OK
+  Bus 2 (PQ): 0.9922 p.u. - status: OK
+  Bus 3 (PQ): 1.0015 p.u. - status: OK
+  Bus 4 (PQ): 0.9915 p.u. - status: OK
+  Bus 5 (PQ): 0.9883 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.307 MW, Q=0.121 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=3.989 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.271 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.254 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.307 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.358 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.152 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-1.999 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.102 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7762
+DONE: False
+
+
+STEP 30
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.043 → 15.65 MW  
+                          Q: raw=+0.493 → 14.80 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.136 → 28.40 MW  
+                          Q: raw=+0.004 → 0.19 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.034 → 1.72 MW  
+                          Q: raw=+0.104 → 5.20 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9999 p.u. - status: OK
+  Bus 2 (PQ): 0.9921 p.u. - status: OK
+  Bus 3 (PQ): 1.0015 p.u. - status: OK
+  Bus 4 (PQ): 0.9913 p.u. - status: OK
+  Bus 5 (PQ): 0.9881 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.308 MW, Q=0.162 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.084 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.194 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=5.196 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.308 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.369 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.242 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.066 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.102 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7763
+DONE: False
+
+
+STEP 31
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.048 → 15.72 MW  
+                          Q: raw=+0.466 → 13.99 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.139 → 28.48 MW  
+                          Q: raw=+0.002 → 0.12 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.031 → 1.53 MW  
+                          Q: raw=+0.103 → 5.13 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9998 p.u. - status: OK
+  Bus 2 (PQ): 0.9920 p.u. - status: OK
+  Bus 3 (PQ): 1.0015 p.u. - status: OK
+  Bus 4 (PQ): 0.9912 p.u. - status: OK
+  Bus 5 (PQ): 0.9880 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.308 MW, Q=0.204 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.181 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.117 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.135 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.309 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.381 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.335 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.134 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.103 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7764
+DONE: False
+
+
+STEP 32
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.049 → 15.73 MW  
+                          Q: raw=+0.436 → 13.09 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.143 → 28.56 MW  
+                          Q: raw=+0.001 → 0.05 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.027 → 1.37 MW  
+                          Q: raw=+0.102 → 5.08 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9997 p.u. - status: OK
+  Bus 2 (PQ): 0.9920 p.u. - status: OK
+  Bus 3 (PQ): 1.0015 p.u. - status: OK
+  Bus 4 (PQ): 0.9911 p.u. - status: OK
+  Bus 5 (PQ): 0.9879 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.309 MW, Q=0.233 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.275 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.048 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=5.082 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.310 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.393 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.424 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.196 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.103 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7765
+DONE: False
+
+
+STEP 33
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.039 → 15.59 MW  
+                          Q: raw=+0.401 → 12.03 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.145 → 28.63 MW  
+                          Q: raw=+0.000 → 0.01 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.027 → 1.34 MW  
+                          Q: raw=+0.101 → 5.06 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9998 p.u. - status: OK
+  Bus 2 (PQ): 0.9920 p.u. - status: OK
+  Bus 3 (PQ): 1.0016 p.u. - status: OK
+  Bus 4 (PQ): 0.9911 p.u. - status: OK
+  Bus 5 (PQ): 0.9879 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.309 MW, Q=0.207 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.356 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.014 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.060 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.310 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.398 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.502 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.225 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.103 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7766
+DONE: False
+
+
+STEP 34
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.030 → 15.44 MW  
+                          Q: raw=+0.367 → 11.01 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.148 → 28.70 MW  
+                          Q: raw=-0.000 → -0.01 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.026 → 1.31 MW  
+                          Q: raw=+0.100 → 5.02 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9998 p.u. - status: OK
+  Bus 2 (PQ): 0.9920 p.u. - status: OK
+  Bus 3 (PQ): 1.0016 p.u. - status: OK
+  Bus 4 (PQ): 0.9911 p.u. - status: OK
+  Bus 5 (PQ): 0.9879 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.309 MW, Q=0.187 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.436 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=-0.006 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.022 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.310 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.404 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.578 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.244 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.104 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7767
+DONE: False
+
+
+STEP 35
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.021 → 15.32 MW  
+                          Q: raw=+0.340 → 10.21 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.150 → 28.75 MW  
+                          Q: raw=+0.000 → 0.01 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.026 → 1.30 MW  
+                          Q: raw=+0.099 → 4.94 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9998 p.u. - status: OK
+  Bus 2 (PQ): 0.9920 p.u. - status: OK
+  Bus 3 (PQ): 1.0017 p.u. - status: OK
+  Bus 4 (PQ): 0.9911 p.u. - status: OK
+  Bus 5 (PQ): 0.9879 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.309 MW, Q=0.183 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.502 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.012 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=4.941 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.310 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.411 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.642 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.227 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.105 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7770
+DONE: False
+
+
+STEP 36
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.013 → 15.19 MW  
+                          Q: raw=+0.314 → 9.41 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.152 → 28.81 MW  
+                          Q: raw=+0.001 → 0.03 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.026 → 1.29 MW  
+                          Q: raw=+0.097 → 4.86 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9998 p.u. - status: OK
+  Bus 2 (PQ): 0.9920 p.u. - status: OK
+  Bus 3 (PQ): 1.0017 p.u. - status: OK
+  Bus 4 (PQ): 0.9911 p.u. - status: OK
+  Bus 5 (PQ): 0.9878 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.310 MW, Q=0.179 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.570 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.030 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=4.860 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.310 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.417 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.707 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.211 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.106 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7773
+DONE: False
+
+
+STEP 37
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.004 → 15.07 MW  
+                          Q: raw=+0.286 → 8.59 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.155 → 28.86 MW  
+                          Q: raw=+0.001 → 0.05 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.026 → 1.28 MW  
+                          Q: raw=+0.096 → 4.78 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9998 p.u. - status: OK
+  Bus 2 (PQ): 0.9920 p.u. - status: OK
+  Bus 3 (PQ): 1.0018 p.u. - status: OK
+  Bus 4 (PQ): 0.9911 p.u. - status: OK
+  Bus 5 (PQ): 0.9878 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.310 MW, Q=0.176 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.637 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.049 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=4.778 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.310 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.424 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.772 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.195 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.108 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7777
+DONE: False
+
+
+STEP 38
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.016 → 14.76 MW  
+                          Q: raw=+0.252 → 7.55 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.156 → 28.91 MW  
+                          Q: raw=+0.003 → 0.13 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.029 → 1.46 MW  
+                          Q: raw=+0.094 → 4.70 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0000 p.u. - status: OK
+  Bus 2 (PQ): 0.9921 p.u. - status: OK
+  Bus 3 (PQ): 1.0019 p.u. - status: OK
+  Bus 4 (PQ): 0.9913 p.u. - status: OK
+  Bus 5 (PQ): 0.9878 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.310 MW, Q=0.117 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.694 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.130 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=4.699 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.310 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.424 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.827 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.123 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.110 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7782
+DONE: False
+
+
+STEP 39
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.053 → 14.20 MW  
+                          Q: raw=+0.213 → 6.39 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.158 → 28.96 MW  
+                          Q: raw=+0.011 → 0.55 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.039 → 1.96 MW  
+                          Q: raw=+0.092 → 4.61 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0007 p.u. - status: OK
+  Bus 2 (PQ): 0.9929 p.u. - status: OK
+  Bus 3 (PQ): 1.0027 p.u. - status: OK
+  Bus 4 (PQ): 0.9923 p.u. - status: OK
+  Bus 5 (PQ): 0.9886 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=25.309 MW, Q=-0.270 MVAr
+  Device 1 (Load): P=-5.000 MW, Q=-1.000 MVAr
+  Device 2 (RenewableGen): P=4.000 MW, Q=4.755 MVAr
+  Device 3 (Load): P=-10.000 MW, Q=-2.000 MVAr
+  Device 4 (RenewableGen): P=11.000 MW, Q=0.548 MVAr
+  Device 5 (Load): P=-25.000 MW, Q=-5.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=4.606 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=25.327 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=24.390 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=3.886 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-1.764 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=25.112 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -1.7787
+DONE: False
+
+
+STEP 40
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.093 → 13.61 MW  
+                          Q: raw=+0.180 → 5.41 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.160 → 28.99 MW  
+                          Q: raw=+0.029 → 1.45 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.053 → 2.63 MW  
+                          Q: raw=+0.089 → 4.44 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0047 p.u. - status: OK
+  Bus 2 (PQ): 0.9996 p.u. - status: OK
+  Bus 3 (PQ): 1.0068 p.u. - status: OK
+  Bus 4 (PQ): 1.0010 p.u. - status: OK
+  Bus 5 (PQ): 0.9961 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=17.684 MW, Q=-2.641 MVAr
+  Device 1 (Load): P=-4.500 MW, Q=-0.900 MVAr
+  Device 2 (RenewableGen): P=3.500 MW, Q=4.793 MVAr
+  Device 3 (Load): P=-9.250 MW, Q=-1.850 MVAr
+  Device 4 (RenewableGen): P=14.625 MW, Q=1.445 MVAr
+  Device 5 (Load): P=-21.875 MW, Q=-4.375 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=4.444 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=17.965 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=16.681 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=4.019 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-5.390 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=21.952 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -0.9885
+DONE: False
+
+
+STEP 41
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.125 → 13.13 MW  
+                          Q: raw=+0.519 → 15.56 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.120 → 28.01 MW  
+                          Q: raw=+0.079 → 3.97 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.071 → 3.57 MW  
+                          Q: raw=+0.071 → 3.55 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0079 p.u. - status: OK
+  Bus 2 (PQ): 1.0056 p.u. - status: OK
+  Bus 3 (PQ): 1.0093 p.u. - status: OK
+  Bus 4 (PQ): 1.0098 p.u. - status: OK
+  Bus 5 (PQ): 1.0024 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=10.118 MW, Q=-4.398 MVAr
+  Device 1 (Load): P=-4.000 MW, Q=-0.800 MVAr
+  Device 2 (RenewableGen): P=3.000 MW, Q=3.609 MVAr
+  Device 3 (Load): P=-8.500 MW, Q=-1.700 MVAr
+  Device 4 (RenewableGen): P=18.250 MW, Q=3.970 MVAr
+  Device 5 (Load): P=-18.750 MW, Q=-3.750 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=3.552 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=11.119 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=9.291 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=2.982 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-10.011 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=18.810 MVA (limit=18.000 MVA) - status: OVERLOAD
+
+REWARD: -0.2027
+DONE: False
+
+
+STEP 42
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.207 → 18.11 MW  
+                          Q: raw=+0.602 → 18.06 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.027 → 24.31 MW  
+                          Q: raw=+0.099 → 4.95 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.091 → 4.56 MW  
+                          Q: raw=+0.013 → 0.64 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 0.9983 p.u. - status: OK
+  Bus 2 (PQ): 0.9980 p.u. - status: OK
+  Bus 3 (PQ): 0.9970 p.u. - status: OK
+  Bus 4 (PQ): 1.0043 p.u. - status: OK
+  Bus 5 (PQ): 0.9942 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=2.606 MW, Q=0.882 MVAr
+  Device 1 (Load): P=-3.500 MW, Q=-0.700 MVAr
+  Device 2 (RenewableGen): P=2.500 MW, Q=-0.825 MVAr
+  Device 3 (Load): P=-7.750 MW, Q=-1.550 MVAr
+  Device 4 (RenewableGen): P=21.875 MW, Q=4.949 MVAr
+  Device 5 (Load): P=-15.625 MW, Q=-3.125 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=0.640 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=2.751 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=1.734 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.826 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-14.528 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=15.881 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0003
+DONE: False
+
+
+STEP 43
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.036 → 14.46 MW  
+                          Q: raw=-0.748 → -22.43 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.013 → 25.33 MW  
+                          Q: raw=+0.132 → 6.58 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.617 → 30.87 MW  
+                          Q: raw=+0.112 → 5.58 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0135 p.u. - status: OK
+  Bus 2 (PQ): 1.0113 p.u. - status: OK
+  Bus 3 (PQ): 1.0130 p.u. - status: OK
+  Bus 4 (PQ): 1.0142 p.u. - status: OK
+  Bus 5 (PQ): 1.0108 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=14.309 MW, Q=-7.434 MVAr
+  Device 1 (Load): P=-3.000 MW, Q=-0.600 MVAr
+  Device 2 (RenewableGen): P=2.000 MW, Q=0.397 MVAr
+  Device 3 (Load): P=-7.000 MW, Q=-1.400 MVAr
+  Device 4 (RenewableGen): P=6.306 MW, Q=6.583 MVAr
+  Device 5 (Load): P=-12.500 MW, Q=-2.500 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.580 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=16.342 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=15.580 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.021 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=5.230 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=12.880 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0483
+DONE: False
+
+
+STEP 44
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.001 → 15.01 MW  
+                          Q: raw=-0.725 → -21.75 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.004 → 24.91 MW  
+                          Q: raw=+0.072 → 3.58 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.800 → 40.02 MW  
+                          Q: raw=+0.123 → 6.13 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0102 p.u. - status: OK
+  Bus 2 (PQ): 1.0090 p.u. - status: OK
+  Bus 3 (PQ): 1.0095 p.u. - status: OK
+  Bus 4 (PQ): 1.0106 p.u. - status: OK
+  Bus 5 (PQ): 1.0096 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=9.804 MW, Q=-5.662 MVAr
+  Device 1 (Load): P=-2.500 MW, Q=-0.500 MVAr
+  Device 2 (RenewableGen): P=1.500 MW, Q=-0.105 MVAr
+  Device 3 (Load): P=-6.250 MW, Q=-1.250 MVAr
+  Device 4 (RenewableGen): P=6.879 MW, Q=3.583 MVAr
+  Device 5 (Load): P=-9.375 MW, Q=-1.875 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=6.127 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=11.438 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=10.942 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.170 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.416 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=10.295 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0558
+DONE: False
+
+
+STEP 45
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=-0.036 → 14.46 MW  
+                          Q: raw=-0.757 → -22.71 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.013 → 24.69 MW  
+                          Q: raw=+0.075 → 3.76 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.823 → 41.13 MW  
+                          Q: raw=+0.121 → 6.05 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0117 p.u. - status: OK
+  Bus 2 (PQ): 1.0116 p.u. - status: OK
+  Bus 3 (PQ): 1.0109 p.u. - status: OK
+  Bus 4 (PQ): 1.0134 p.u. - status: OK
+  Bus 5 (PQ): 1.0130 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=6.713 MW, Q=-6.469 MVAr
+  Device 1 (Load): P=-2.000 MW, Q=-0.400 MVAr
+  Device 2 (RenewableGen): P=1.000 MW, Q=-0.375 MVAr
+  Device 3 (Load): P=-5.500 MW, Q=-1.100 MVAr
+  Device 4 (RenewableGen): P=6.078 MW, Q=3.758 MVAr
+  Device 5 (Load): P=-6.250 MW, Q=-1.250 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=6.050 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=9.432 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=9.351 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.266 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.720 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=7.881 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0668
+DONE: False
+
+
+STEP 46
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.005 → 15.08 MW  
+                          Q: raw=-0.776 → -23.28 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.016 → 24.59 MW  
+                          Q: raw=+0.062 → 3.12 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.846 → 42.32 MW  
+                          Q: raw=+0.115 → 5.73 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0116 p.u. - status: OK
+  Bus 2 (PQ): 1.0125 p.u. - status: OK
+  Bus 3 (PQ): 1.0108 p.u. - status: OK
+  Bus 4 (PQ): 1.0140 p.u. - status: OK
+  Bus 5 (PQ): 1.0145 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=3.299 MW, Q=-6.357 MVAr
+  Device 1 (Load): P=-1.500 MW, Q=-0.300 MVAr
+  Device 2 (RenewableGen): P=0.500 MW, Q=-0.490 MVAr
+  Device 3 (Load): P=-4.750 MW, Q=-0.950 MVAr
+  Device 4 (RenewableGen): P=5.602 MW, Q=3.120 MVAr
+  Device 5 (Load): P=-3.125 MW, Q=-0.625 MVAr
+  Device 6 (StorageUnit): P=-0.000 MW, Q=5.730 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=7.245 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=7.604 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.276 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-2.331 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=5.985 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0770
+DONE: False
+
+
+STEP 47
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.045 → 15.68 MW  
+                          Q: raw=-0.795 → -23.86 MVAr 
+  Device 4 (RenewableGen)  P: raw=-0.004 → 24.89 MW  
+                          Q: raw=+0.042 → 2.11 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.862 → 43.12 MW  
+                          Q: raw=+0.109 → 5.47 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0117 p.u. - status: OK
+  Bus 2 (PQ): 1.0135 p.u. - status: OK
+  Bus 3 (PQ): 1.0111 p.u. - status: OK
+  Bus 4 (PQ): 1.0146 p.u. - status: OK
+  Bus 5 (PQ): 1.0162 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-0.098 MW, Q=-6.353 MVAr
+  Device 1 (Load): P=-1.000 MW, Q=-0.200 MVAr
+  Device 2 (RenewableGen): P=-0.000 MW, Q=-0.126 MVAr
+  Device 3 (Load): P=-4.000 MW, Q=-0.800 MVAr
+  Device 4 (RenewableGen): P=5.119 MW, Q=2.114 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=5.466 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-6.427 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-6.855 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.052 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-1.726 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=5.466 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0873
+DONE: False
+
+
+STEP 48
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.090 → 16.36 MW  
+                          Q: raw=-0.813 → -24.40 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.012 → 25.29 MW  
+                          Q: raw=+0.022 → 1.09 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.876 → 43.80 MW  
+                          Q: raw=+0.104 → 5.21 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0102 p.u. - status: OK
+  Bus 2 (PQ): 1.0116 p.u. - status: OK
+  Bus 3 (PQ): 1.0100 p.u. - status: OK
+  Bus 4 (PQ): 1.0120 p.u. - status: OK
+  Bus 5 (PQ): 1.0142 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=0.348 MW, Q=-5.572 MVAr
+  Device 1 (Load): P=-1.000 MW, Q=-0.200 MVAr
+  Device 2 (RenewableGen): P=-0.000 MW, Q=0.350 MVAr
+  Device 3 (Load): P=-4.000 MW, Q=-0.800 MVAr
+  Device 4 (RenewableGen): P=4.666 MW, Q=1.094 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=5.206 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=5.640 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-5.526 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.011 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-0.728 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=5.206 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0884
+DONE: False
+
+
+STEP 49
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.056 → 15.85 MW  
+                          Q: raw=-0.803 → -24.10 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.012 → 25.31 MW  
+                          Q: raw=+0.025 → 1.26 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.883 → 44.13 MW  
+                          Q: raw=+0.107 → 5.37 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0108 p.u. - status: OK
+  Bus 2 (PQ): 1.0124 p.u. - status: OK
+  Bus 3 (PQ): 1.0106 p.u. - status: OK
+  Bus 4 (PQ): 1.0129 p.u. - status: OK
+  Bus 5 (PQ): 1.0150 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=0.099 MW, Q=-5.917 MVAr
+  Device 1 (Load): P=-1.000 MW, Q=-0.200 MVAr
+  Device 2 (RenewableGen): P=-0.000 MW, Q=0.370 MVAr
+  Device 3 (Load): P=-4.000 MW, Q=-0.800 MVAr
+  Device 4 (RenewableGen): P=4.917 MW, Q=1.261 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=5.373 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=5.983 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-5.891 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.015 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-1.027 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=5.373 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0877
+DONE: False
+
+
+STEP 50
+
+ACTION TAKEN (Agent Commands):
+  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)
+
+  Device 2 (RenewableGen)  P: raw=+0.027 → 15.41 MW  
+                          Q: raw=-0.795 → -23.86 MVAr 
+  Device 4 (RenewableGen)  P: raw=+0.013 → 25.34 MW  
+                          Q: raw=+0.029 → 1.45 MVAr 
+  Device 6 (StorageUnit)  P: raw=+0.886 → 44.32 MW  
+                          Q: raw=+0.111 → 5.56 MVAr 
+
+VOLTAGE (PER UNIT) AT BUSES:
+  Bus 0 (Slack): 1.0000 p.u. - status: OK
+  Bus 1 (PQ): 1.0116 p.u. - status: OK
+  Bus 2 (PQ): 1.0132 p.u. - status: OK
+  Bus 3 (PQ): 1.0114 p.u. - status: OK
+  Bus 4 (PQ): 1.0140 p.u. - status: OK
+  Bus 5 (PQ): 1.0160 p.u. - status: OK
+
+DEVICE POWER INJECTIONS:
+  Device 0 (ClassicalGen): P=-0.099 MW, Q=-6.308 MVAr
+  Device 1 (Load): P=-1.000 MW, Q=-0.200 MVAr
+  Device 2 (RenewableGen): P=-0.000 MW, Q=0.403 MVAr
+  Device 3 (Load): P=-4.000 MW, Q=-0.800 MVAr
+  Device 4 (RenewableGen): P=5.117 MW, Q=1.449 MVAr
+  Device 5 (Load): P=0.000 MW, Q=0.000 MVAr
+  Device 6 (StorageUnit): P=0.000 MW, Q=5.555 MVAr, SoC=0.000 MWh
+
+BRANCH POWER FLOWS:
+  Branch (0, 1): S=-6.382 MVA (limit=32.000 MVA) - status: OK
+  Branch (1, 2): S=-6.287 MVA (limit=25.000 MVA) - status: OK
+  Branch (1, 3): S=1.021 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 4): S=-1.292 MVA (limit=18.000 MVA) - status: OK
+  Branch (2, 5): S=5.555 MVA (limit=18.000 MVA) - status: OK
+
+REWARD: -0.0873
+DONE: False
