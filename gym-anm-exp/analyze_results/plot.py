@@ -70,6 +70,12 @@ for agent, d in eval_stats.items():
 
 # Remove agents with no data
 eval_stats = {k: v for k, v in eval_stats.items() if len(v) > 0}
+
+# debug
+for agent, d in eval_stats.items():
+    print(f"{agent}: timesteps range from {d[0, 0, 0]/1e6:.2f}M to {d[0, 0, -1]/1e6:.2f}M")
+
+
 # Plot discounted returns.
 fig, ax = plt.subplots(1, 1, figsize=FIGSIZE)
 for agent, d in eval_stats.items():
@@ -81,7 +87,7 @@ for agent, d in eval_stats.items():
     # Compute best mean
     idx = np.argmax(mu)
     print(f'Best discounted return for {agent}: {mu[idx]} +/- {std[idx]}')
-ax.set_xlim([None, 3])
+ax.set_xlim([0, None])
 ax.set_xlabel('Timestep (million)')
 ax.set_ylabel('Discounted return\ncomputed as in Eqn. (7)')
 ax.legend(loc='lower right', fontsize='small')
@@ -98,7 +104,7 @@ for agent, d in eval_stats.items():
     # Compute best mean
     idx = np.argmax(mu)
     print(f'Best total return for {agent}: {mu[idx]} +/- {std[idx]}')
-ax.set_xlim([None, 3])
+ax.set_xlim([0, None])
 ax.set_xlabel('Timestep (million)')
 ax.set_ylabel('Non-discounted return (T=2000)')
 ax.legend(loc='lower right')

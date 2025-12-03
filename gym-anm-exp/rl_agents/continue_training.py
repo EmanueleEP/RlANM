@@ -24,6 +24,7 @@ from .hyperparameters import *
 from .callbacks import ProgressBarManager, EvalCallback
 from .utils import parse_args, make_envs, load_training_env
 
+import numpy as np
 
 if __name__ == '__main__':
 
@@ -41,6 +42,19 @@ if __name__ == '__main__':
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device} device")
+
+    eval_file = os.path.join(LOG_DIR, 'evaluations.npz')
+    old_data = None
+    if os.path.exists(eval_file):
+        print("Loading existing evaluation data...")
+        old_data = np.load(eval_file)
+        old_timesteps = old_data['timesteps']
+        old_results = old_data['results']
+        old_ep_lengths = old_data['ep_lengths']
+        if 'discounted_results' in old_data:
+            old_discounted = old_data['discounted_results']
+        print(f"Found data from {old_timesteps[0]} to {old_timesteps[-1]} timesteps")
+
 
     # Re-create logging folders
     TENSORBOARD_LOG = os.path.join(LOG_DIR, 'tensorboard')
@@ -66,11 +80,15 @@ if __name__ == '__main__':
                                 log_path=LOG_DIR, eval_freq=EVAL_FREQ,
                                 deterministic=True, render=False,
                                 n_eval_episodes=N_EVAL_EPISODES, verbose=True)
+    
+    if old_data is not None:
+        eval_callback.evaluations_timesteps = old_timesteps.tolist()
+        eval_callback.evaluations_results = old_results.tolist()
+        eval_callback.evaluations_length = old_ep_lengths.tolist()
+        if 'discounted_results' in old_data:
+            eval_callback._is_discounted_set = True
+
     callbacks = [eval_callback]
-
-
-
-
 
     # Continue training agent
     with ProgressBarManager(TRAIN_STEPS) as c:
