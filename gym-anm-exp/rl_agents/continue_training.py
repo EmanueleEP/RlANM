@@ -53,7 +53,7 @@ if __name__ == '__main__':
         old_ep_lengths = old_data['ep_lengths']
         if 'discounted_results' in old_data:
             old_discounted = old_data['discounted_results']
-        print(f"Found data from {old_timesteps[0]} to {old_timesteps[-1]} timesteps")
+        print(f"Found data from {old_timesteps[0]} timesteps")
 
 
     # Re-create logging folders
