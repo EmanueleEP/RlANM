@@ -58,8 +58,22 @@ for agent_group in agent_groups:
         results = np.hstack(results)
         discounted_results = np.hstack(discounted_results)
         ep_lengths = np.hstack(ep_lengths)
-        d = np.array([timesteps, results, discounted_results, ep_lengths])
+        
+        # Debug: check shapes
+        print(f"Debug {agent}/{run}: timesteps={timesteps.shape}, results={results.shape}, "
+              f"discounted={discounted_results.shape}, ep_lengths={ep_lengths.shape}")
+        
+        # Ensure all arrays have the same length by taking minimum
+        min_len = min(len(timesteps), len(results), len(discounted_results), len(ep_lengths))
+        timesteps = timesteps[:min_len]
+        results = results[:min_len]
+        discounted_results = discounted_results[:min_len]
+        ep_lengths = ep_lengths[:min_len]
+        
+        # Stack into array AFTER concatenation
+        d = np.stack([timesteps, results, discounted_results, ep_lengths])
         eval_stats[agent].append(d)
+        
 # Clean statistics.
 for agent, d in eval_stats.items():
     if len(d) == 0:
