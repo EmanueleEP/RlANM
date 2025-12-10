@@ -3,16 +3,38 @@ This file contains the hyperparameter values used for training and
 testing RL agents.
 """
 import os
+import sys
+import gym_anm.envs # force registration of environments 
+
+def is_colab():
+    try:
+        from google.colab import drive  # noinspection PyUnresolvedReference
+        return True
+    except ImportError:
+        return False
+
+# Set BASE_DIR based on environment
+if is_colab():
+    BASE_DIR = '/content/drive/MyDrive/UNI/Tesi/gym-anm-results/'
+    # Opzionale: monta Google Drive automaticamente
+    try:
+        from google.colab import drive
+        drive.mount('/content/drive')
+        print("Google Drive montato con successo!")
+    except Exception as e:
+        print(f"Errore nel montaggio di Google Drive: {e}")
+else:
+    BASE_DIR = './results/'
+    print("local run")
 
 
 
-BASE_DIR = './results/'
-ENV_ID = 'gym_anm:ANM6Easy-v0'
+ENV_ID = 'Ciao'
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
 TRAIN_STEPS = 3000
 MAX_TRAINING_EP_LENGTH = 5000
-EVAL_FREQ = 1000
+EVAL_FREQ = 1500
 N_EVAL_EPISODES = 5
 MAX_EVAL_EP_LENGTH = 3000
 

@@ -98,10 +98,15 @@ def print_env_info(anm_env):
         print("\n")
 
 
-def print_step_info(step, action, obs, reward, done, anm_env):
+def print_step_info(step, action, obs, reward, done, anm_env, action_time=None):
     """Print detailed information about the current step."""
     print("\n")
     print(f"STEP {step}")
+    
+    # Add timing information if available
+    if action_time is not None:
+        print(f"ACTION DECISION TIME: {action_time*1000:.2f} ms")
+    
     # Action information
     print("\nACTION TAKEN (Agent Commands):")
 
@@ -109,7 +114,7 @@ def print_step_info(step, action, obs, reward, done, anm_env):
         sim = anm_env.simulator
         action_idx = 0
 
-        print("  (Each row shows: RAW action → Physical setpoint (MW/MVAr) → Limit status)\n")
+        print("  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)\n")
 
         for dev_id, dev in sim.devices.items():
             dev_type = type(dev).__name__
@@ -158,13 +163,6 @@ def print_step_info(step, action, obs, reward, done, anm_env):
     print("\nVOLTAGE (PER UNIT) AT BUSES:")
     if hasattr(anm_env, 'simulator'):
         simulator = anm_env.simulator
-
-        # print("\n")
-        # print("Simulator - get_state_space()")
-
-        # print(f"state space is: \n{simulator.get_state_space()}")
-        # print("\n")
-
         
         if hasattr(simulator, 'state') and simulator.state is not None:
             bus_v_magn = simulator.state.get('bus_v_magn', None)
@@ -205,6 +203,102 @@ def print_step_info(step, action, obs, reward, done, anm_env):
 
     print(f"\nREWARD: {reward:.4f}")
     print(f"DONE: {done}")
+
+
+def visualize(path, algo, T, sleep_time, print_steps):
+    """
+    Visualize a trained agent.
+    """
+    # Load agent and environment
+    model = algo.load(os.path.join(path, 'best_model'))
+    env = load_visualization_env(ENV_ID, os.path.join(path, 'training_vec_env'), 1)
+
+    # Create log file
+    log_filename = os.path.join(path, f'visualization_log_{time.strftime("%Y%m%d_%H%M%S")}.txt')
+    log_file = open(log_filename, 'w')
+
+    print()
+    print("IMPORTANT: gym-anm environments render in a BROWSER")
+    print("'Running on http://127.0.0.1:8050/'")
+    time.sleep(3)
+
+    anm_env = get_anm_env(env)
+
+    # Console output optional
+    class Output:
+        def __init__(self, file, print_to_console=True):
+            self.file = file
+            self.stdout = sys.stdout
+            self.print_to_console = print_to_console
+        
+        def write(self, text):
+            if self.print_to_console:
+                self.stdout.write(text)
+            self.file.write(text)
+        
+        def flush(self):
+            if self.print_to_console:
+                self.stdout.flush()
+            self.file.flush()
+    
+    originStdout = sys.stdout
+    sys.stdout = Output(log_file, print_to_console=print_steps)
+
+    # Reset and first step
+    obs = env.reset()
+
+    print("\nInitializing web server...")
+    print_env_info(anm_env)
+
+    anm_env.render()
+    
+    print("\nStarting agent interaction...")
+    
+    done, state = False, None
+    
+    # Variables to track timing statistics
+    action_times = []
+
+    try:
+        for i in range(T):
+            # Time the action prediction
+            start_time = time.time()
+            action, state = model.predict(obs, state=state, deterministic=True)
+            action_time = time.time() - start_time
+            action_times.append(action_time)
+            
+            obs, rewards, dones, info = env.step(action)
+
+            print_step_info(i+1, action[0], obs[0], rewards[0], dones[0], anm_env, action_time)
+
+            anm_env.render()
+                        
+            time.sleep(sleep_time)
+            
+            if dones[0]:
+                print(f"\nEpisode finished at step {i+1}")
+                obs = env.reset()
+                state=None
+    
+    except KeyboardInterrupt:
+        print("\n\nVisualization interrupted by user")
+    
+    # Print timing statistics
+    if action_times:
+        print("\n" + "="*60)
+        print("ACTION DECISION TIME STATISTICS")
+        print("="*60)
+        print(f"Total steps: {len(action_times)}")
+        print(f"Mean time: {sum(action_times)/len(action_times)*1000:.2f} ms")
+        print(f"Min time: {min(action_times)*1000:.2f} ms")
+        print(f"Max time: {max(action_times)*1000:.2f} ms")
+        print(f"Std dev: {(sum((t - sum(action_times)/len(action_times))**2 for t in action_times) / len(action_times))**0.5 * 1000:.2f} ms")
+        print("="*60)
+    
+    sys.stdout = originStdout
+
+    print("The web server will shut down.")
+    env.close()
 
 def print_obs(obs, anm_env):
     obs_flat = obs.flatten()
@@ -259,10 +353,8 @@ def visualize(path, algo, T, sleep_time, print_steps):
     log_file = open(log_filename, 'w')
 
     print()
-    print("IMPORTANT: gym-anm environments render in a WEB BROWSER")
+    print("IMPORTANT: gym-anm environments render in a BROWSER")
     print("'Running on http://127.0.0.1:8050/'")
-    print("\nStarting visualization in 3 seconds")
-    time.sleep(3)
 
     anm_env = get_anm_env(env)
 
@@ -297,13 +389,20 @@ def visualize(path, algo, T, sleep_time, print_steps):
     print("\nStarting agent interaction...")
     
     done, state = False, None
+    action_times = []
 
     try:
         for i in range(T):
+            # Time the action prediction
+            start_time = time.time()
             action, state = model.predict(obs, state=state, deterministic=True)
+            action_time = time.time() - start_time
+            action_times.append(action_time)
+            
             obs, rewards, dones, info = env.step(action)
 
-            print_step_info(i+1, action[0], obs[0], rewards[0], dones[0], anm_env)
+            # Updated line with action_time parameter
+            print_step_info(i+1, action[0], obs[0], rewards[0], dones[0], anm_env, action_time)
 
             anm_env.render()
                         
