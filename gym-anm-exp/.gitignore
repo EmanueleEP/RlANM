@@ -138,3 +138,9 @@ analyze_results/figures
 analyze_results/results
 analyze_results/videos
 figures/
+
+# Git
+*.pub
+git_dei_ssh
+sshgitdei
+
