@@ -378,6 +378,9 @@ def visualize(path, algo, T, sleep_time, print_steps):
     originStdout = sys.stdout
     sys.stdout = Output(log_file, print_to_console=print_steps)
 
+    sys.stdout = originStdout # Comment to print in shell
+
+
     # Reset and first step
     obs = env.reset()
 

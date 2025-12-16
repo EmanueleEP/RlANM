@@ -82,11 +82,16 @@ if __name__ == '__main__':
                                 n_eval_episodes=N_EVAL_EPISODES, verbose=True)
     
     if old_data is not None:
-        eval_callback.evaluations_timesteps = old_timesteps.tolist()
-        eval_callback.evaluations_results = old_results.tolist()
-        eval_callback.evaluations_length = old_ep_lengths.tolist()
-        if 'discounted_results' in old_data:
-            eval_callback._is_discounted_set = True
+        eval_callback.evaluations_timesteps = old_timesteps
+        eval_callback.evaluations_results = old_results
+        eval_callback.evaluations_length = old_ep_lengths
+        if old_discounted is not None:
+            eval_callback.evaluations_discounted = old_discounted
+            # This flag tells the callback that discounted results exist
+            if hasattr(eval_callback, '_is_discounted_set'):
+                eval_callback._is_discounted_set = True
+    
+    callbacks = [eval_callback]
 
     callbacks = [eval_callback]
 
