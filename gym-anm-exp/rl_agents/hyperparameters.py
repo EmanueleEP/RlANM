@@ -29,9 +29,11 @@ else:
 
 
 
-ENV_ID = 'gym_anm:ANM6Easy-v0'
+#ENV_ID = 'gym_anm:ANM6Easy-v0'
 #ENV_ID = 'Ciao-v0'
 #ENV_ID = 'SimpleEnv-v0'
+ENV_ID = "BCP-v0"
+
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
 TRAIN_STEPS = 3000000
