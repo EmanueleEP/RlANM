@@ -34,7 +34,14 @@ function init() {
   /**
    * What to do when the connection with the WebSocket server is established.
    */
-  ws.onopen = function() {};
+  ws.onopen = function() {
+    console.log("WebSocket connected!");
+  };
+
+  ws.onerror = function(error) {
+    console.error("WebSocket error:", error);
+  };
+
 
   /**
    * What to do when a message from the WebSocket server is received.

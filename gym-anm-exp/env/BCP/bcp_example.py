@@ -6,7 +6,7 @@ from .bcp import BCP_base
 
 
 class BCP(BCP_base):
-    """The :code:`ANM6Easy-v0` task."""
+    """The :code:`BCP-v0` task."""
 
     def __init__(self):
         observation = "state"  # fully observable environment
