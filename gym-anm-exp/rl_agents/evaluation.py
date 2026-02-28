@@ -1,7 +1,7 @@
 """
 This file contains a custom `evaluate_policy()` function, which is a modified
 version of the Stable Baselines3 original function
-(https://stable-baselines3.readthedocs.io/en/master/common/evaluation.html#stable_baselines3.common.evaluation.evaluate_policy)
+(https://stable-baselines3.readthedocs.io/en/master/common/evaluation.html#stable_baselines3.common.evaluation.evaluate_policy )
 which also computes discounted returns.
 """
 from typing import Callable, List, Optional, Tuple, Union
@@ -10,6 +10,34 @@ import numpy as np
 
 from stable_baselines3.common import base_class
 from stable_baselines3.common.vec_env import VecEnv
+
+
+def _get_gamma(env: Union[gym.Env, VecEnv]) -> float:
+    """
+    Extract gamma (discount factor) from environment.
+    Handles both single envs and VecEnvs, including wrapped environments.
+    """
+    # Default value if not found
+    default_gamma = 0.99
+    
+    # Try to get gamma directly
+    if hasattr(env, 'gamma'):
+        return env.gamma
+    
+    # If VecEnv, try to get from first underlying env
+    if isinstance(env, VecEnv) and hasattr(env, 'envs') and len(env.envs) > 0:
+        inner_env = env.envs[0]
+        # Unwrap to find gamma
+        while hasattr(inner_env, 'env'):
+            if hasattr(inner_env, 'gamma'):
+                return inner_inner.gamma
+            inner_env = inner_env.env
+        # Check unwrapped env
+        if hasattr(inner_env, 'gamma'):
+            return inner_env.gamma
+    
+    # If not found, return default
+    return default_gamma
 
 
 def evaluate_policy(
@@ -44,6 +72,9 @@ def evaluate_policy(
     if isinstance(env, VecEnv):
         assert env.num_envs == 1, "You must pass only one environment when using this function"
 
+    # Get gamma once before the loop
+    gamma = _get_gamma(env)
+
     episode_rewards, episode_lengths, episode_discounted_rewards = [], [], []
     for i in range(n_eval_episodes):
         # Avoid double reset, as VecEnv are reset automatically
@@ -63,7 +94,7 @@ def evaluate_policy(
             # The 'done' flag from VecEnv is True if terminated OR truncated,
 
             episode_reward += reward
-            episode_discounted_reward += reward * (env.gamma ** episode_length)
+            episode_discounted_reward += reward * (gamma ** episode_length)  # <-- USE EXTRACTED GAMMA
             if callback is not None:
                 callback(locals(), globals())
             episode_length += 1

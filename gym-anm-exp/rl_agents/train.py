@@ -12,15 +12,20 @@ where
 
 All other hyperparameter values are taken from `hyperparameters.py`.
 """
+import os
+import numpy as np
+import gymnasium as gym
+
 from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.env_util import make_vec_env  # ADD THIS IMPORT
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 
 import torch
 from .hyperparameters import *
 from .callbacks import ProgressBarManager, EvalCallback
-from .utils import make_envs, save_hyperparameters, parse_args, make_log_dirs
-
+from .utils import save_hyperparameters, parse_args, make_log_dirs  # REMOVED make_envs, added save_hyperparameters
+from .wrappers import LagrangianWrapper, TimeLimitWrapper
 
 # Read command line arguments.
 args = parse_args()
@@ -43,7 +48,20 @@ print(f"Log directory: {LOG_DIR}")
 AGENT_PATH = os.path.join(LOG_DIR, 'best_model.zip')
 ENV_PATH = os.path.join(LOG_DIR, 'training_vec_env')
 EVAL_FILE = os.path.join(LOG_DIR, 'evaluations.npz')
+LAMBDA_PATH = os.path.join(LOG_DIR, 'lambda_state.npy')  # MOVED HERE - defined before use
+
 continuing_training = os.path.exists(AGENT_PATH)
+
+# lagrangian parameters
+V_TOLERANCE = 0.05
+LAMBDA_LR = 5e-5
+
+# Restore lambda from disk if continuing training
+lambda_init_value = 1.0
+if continuing_training and os.path.exists(LAMBDA_PATH):
+    saved_lambda = float(np.load(LAMBDA_PATH))
+    lambda_init_value = saved_lambda
+    print(f"Restored lambda from checkpoint: {lambda_init_value:.6f}")
 
 if continuing_training:
     print(f"Found existing model at {AGENT_PATH}")
@@ -71,17 +89,49 @@ else:
 # Set random seed
 set_random_seed(SEED)
 
-print("Creating environments...")
-# Environments
+# ---------------------------------------------------------------------------
+# Env factory - WRAPPERS APPLIED INSIDE FACTORY (before vectorization)
+# ---------------------------------------------------------------------------
+def make_train_env(rank: int = 0):
+    """Factory that returns a single wrapped training env."""
+    def _init():
+        env = gym.make(ENV_ID)
+        env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
+        env = LagrangianWrapper(
+            env,
+            v_tolerance=V_TOLERANCE,
+            lambda_lr=LAMBDA_LR,
+            lambda_init=lambda_init_value,
+        )
+        env.reset(seed=SEED + rank)
+        return env
+    return _init
 
+
+def make_eval_env(rank: int = 0):
+    """Factory that returns a single wrapped eval env (lambda not updated)."""
+    def _init():
+        env = gym.make(ENV_ID)
+        env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
+        # lambda_lr=0 disables dual updates during evaluation
+        env = LagrangianWrapper(
+            env,
+            v_tolerance=V_TOLERANCE,
+            lambda_lr=0.0,  # No learning during eval
+            lambda_init=lambda_init_value,
+        )
+        env.reset(seed=SEED + 1000 + rank)
+        return env
+    return _init
+
+# ---------------------------------------------------------------------------
+# Build vectorised environments
+# ---------------------------------------------------------------------------
+print("Creating environments...")
 try:
-    if continuing_training and os.path.exists(ENV_PATH):
-        # Load existing training environment
-        train_env = load_training_env(ENV_ID, ENV_PATH, LOG_DIR, MAX_TRAINING_EP_LENGTH, SEED, N_ENVS)
-        _, eval_env = make_envs(ENV_ID, LOG_DIR, GAMMA, MAX_TRAINING_EP_LENGTH, MAX_EVAL_EP_LENGTH, SEED, 1)
-    else:
-        # Create new environments
-        train_env, eval_env = make_envs(ENV_ID, LOG_DIR, GAMMA, MAX_TRAINING_EP_LENGTH, MAX_EVAL_EP_LENGTH, SEED, N_ENVS)
+    # Use make_vec_env with factory functions - this is the CORRECT way
+    train_env = make_vec_env(make_train_env(), n_envs=N_ENVS, seed=SEED)
+    eval_env = make_vec_env(make_eval_env(), n_envs=1, seed=SEED + 1000)
     print("Environments created successfully")
 
 except Exception as e:
@@ -89,7 +139,6 @@ except Exception as e:
     import traceback
     traceback.print_exc()
     raise
-
 
 # Load existing evaluation data if continuing
 old_data = None
@@ -107,13 +156,11 @@ if continuing_training and os.path.exists(EVAL_FILE):
         print(f"Warning: Could not load evaluation data: {e}")
         old_data = None
 
-
 # Callbacks
 eval_callback = EvalCallback(eval_env, best_model_save_path=LOG_DIR,
                              log_path=LOG_DIR, eval_freq=EVAL_FREQ,
                              deterministic=True, render=False,
                              n_eval_episodes=N_EVAL_EPISODES, verbose=True)
-
 
 # Restore previous evaluation data
 if old_data is not None:
@@ -125,11 +172,9 @@ if old_data is not None:
         if hasattr(eval_callback, '_is_discounted_set'):
             eval_callback._is_discounted_set = True
 
-
 callbacks = [eval_callback]
 
 print("Creating model...")
-
 
 # Agent
 try:
@@ -138,7 +183,7 @@ try:
     
     if continuing_training:
         # Load existing model
-        model = ALGO.load(AGENT_PATH, train_env, device=device)
+        model = ALGO.load(AGENT_PATH, env=train_env, device=device)
         print("Loaded existing model successfully")
     else:
         # Create new model
@@ -160,8 +205,31 @@ if __name__ == "__main__":
             model.learn(total_timesteps=TRAIN_STEPS, 
                        tb_log_name=TB_LOG_NAME, 
                        callback=callbacks,
-                       reset_num_timesteps=not continuing_training)  # Don't reset timesteps when continuing
+                       reset_num_timesteps=not continuing_training)
         print("Training completed successfully!")
+        
+        # ------------------------------------------------------------------
+        # Persist lambda values so they survive across restarts
+        # ------------------------------------------------------------------
+        try:
+            # Access the underlying envs and get lambda from each
+            env_fns = train_env.envs if hasattr(train_env, 'envs') else []
+            lambdas = []
+            for e in env_fns:
+                # Unwrap to reach LagrangianWrapper
+                inner = e
+                while hasattr(inner, 'env'):
+                    if isinstance(inner, LagrangianWrapper):
+                        lambdas.append(inner.get_lambda())
+                        break
+                    inner = inner.env
+            if lambdas:
+                avg_lambda = float(np.mean(lambdas))
+                np.save(LAMBDA_PATH, avg_lambda)
+                print(f"Saved lambda={avg_lambda:.6f} to {LAMBDA_PATH}")
+        except Exception as e:
+            print(f"Warning: could not save lambda state: {e}")
+        
     except Exception as e:
         print(f"Error during training: {e}")
         import traceback

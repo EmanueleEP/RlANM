@@ -21,16 +21,16 @@ class BCP(BCP_base):
         super().__init__(observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping)
 
         # Consumption and maximum generation 24-hour time series.
-        # self.P_loads = _get_load_time_series()
-        # self.P_maxs = _get_gen_time_series()
+        self.P_loads = _get_load_time_series(0.1, 123)
+        self.P_maxs = _get_gen_time_series(0.5, 123)
 
-        # load from file
-        P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)
-        self.P_loads = P_loads
-        self.P_maxs  = P_maxs
-        self._n_days = len(days)
-        # Total timesteps available across all days
-        self._total_steps = self.P_loads.shape[1]
+        # # load from file
+        # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)
+        # self.P_loads = P_loads
+        # self.P_maxs  = P_maxs
+        # self._n_days = len(days)
+        # # Total timesteps available across all days
+        # self._total_steps = self.P_loads.shape[1]
 
     def init_state(self):
         n_dev, n_gen, n_des = 4, 1, 1
@@ -38,10 +38,10 @@ class BCP(BCP_base):
         state = np.zeros(2 * n_dev + n_des + n_gen + self.K)
 
         # old way
-        # t_0 = self.np_random.integers(0, int(24 / self.delta_t))
+        t_0 = self.np_random.integers(0, int(24 / self.delta_t))
         
         # from file 
-        t_0 = self.np_random.integers(0, self._total_steps)
+        # t_0 = self.np_random.integers(0, self._total_steps)
         state[-1] = t_0
 
         
@@ -74,10 +74,10 @@ class BCP(BCP_base):
 
     def next_vars(self, s_t):
         # old way
-        # aux = int((s_t[-1] + 1) % (24 / self.delta_t))
+        aux = int((s_t[-1] + 1) % (24 / self.delta_t))
         
         # from file
-        aux = int((s_t[-1] + 1) % self._total_steps)  
+        # aux = int((s_t[-1] + 1) % self._total_steps)  
 
         vars = []
         for p_load in self.P_loads:
@@ -93,13 +93,14 @@ class BCP(BCP_base):
         obs, info = super().reset(**kwargs)
 
         # Reset the time of the day based on the auxiliary variable.
+        print(f"INFO PRINTED: {info}")
         new_date = self.date + self.state[-1] * self.timestep_length
         super().reset_date(new_date)
 
         return obs, info
 
 # 1 - added gaussian noise
-def _get_load_time_series():
+def _get_load_time_series(noise_std=0.1, seed=None):
     rng = np.random.default_rng(seed)
     s1 = -np.ones(25); s12 = np.linspace(-1.5, -4.5, 7)
     s2 = -5 * np.ones(13); s23 = np.linspace(-4.625, -2.375, 7)
@@ -112,7 +113,7 @@ def _get_load_time_series():
 
 
 # 1 - added gaussian noise
-def _get_gen_time_series():
+def _get_gen_time_series(noise_std=0.1, seed=None):
     rng = np.random.default_rng(seed)
     s1 = np.zeros(25); s12 = np.linspace(0.5, 3.5, 7)
     s2 = 4 * np.ones(13); s23 = np.linspace(7.25, 36.75, 7)
@@ -122,47 +123,20 @@ def _get_gen_time_series():
     P_maxs = P2.reshape(1, -1)  # shape = (1, 96)
     assert P_maxs.shape[1] == 96
     return P_maxs
+    #return _get_profile_solar_pv()
 
-
-
-if __name__ == "__main__":
-    import time
-
-    env = BCP()
-    env.reset()
-    print("Environment reset and ready.")
-
-    T = 50
-    start = time.time()
-    for i in range(T):
-        print(i)
-        a = env.action_space.sample()
-        o, r, _, _, _ = env.step(a)
-        env.render()
-        time.sleep(0.5)
-
-    print("Done with {} steps in {} seconds!".format(T, time.time() - start))
-
-
-
+def _get_profile_solar_pv(delta_t=0.25, peak_mw=30.0, peak_hour=14.0, width=3.5):
+    # width      : std dev of the Gaussian in hours (controls ramp steepness)
+    
+    steps = int(24 / delta_t)
+    t = np.linspace(0, 24, steps, endpoint=False)
+    P_max = peak_mw * np.exp(-0.5 * ((t - peak_hour) / width) ** 2)
+    P_max = np.clip(P_max, 0, None)
+    return P_max.reshape(1, -1)
 
 
 def _load_profiles_from_csv(filepath: str, delta_t: float = 0.25):
-    """
-    Expected CSV columns: day, hour, p_load, p_max
-    day  : integer day index (1-based)
-    hour : integer hour of day (0-23)
-    p_load : real power load (negative = consumption)
-    p_max  : maximum real power generation (non-negative)
 
-    Returns
-    -------
-    P_loads : np.ndarray of shape (1, n_timesteps)
-    P_maxs  : np.ndarray of shape (1, n_timesteps)
-        where n_timesteps = n_days * 24 / delta_t
-    days : list of int
-        Sorted list of unique day indices found in the file.
-    """
     df = pd.read_csv(filepath)
 
     _validate_columns(df)
@@ -222,3 +196,24 @@ def _validate_day(day_df: pd.DataFrame, day: int):
         raise ValueError(f"Day {day} has positive p_load values (loads must be <= 0).")
     if (day_df["p_max"] < 0).any():
         raise ValueError(f"Day {day} has negative p_max values (generation must be >= 0).")
+
+
+
+if __name__ == "__main__":
+    import time
+
+    env = BCP()
+    env.reset()
+    print("Environment reset and ready.")
+
+    T = 50
+    start = time.time()
+    for i in range(T):
+        print(i)
+        a = env.action_space.sample()
+        o, r, _, _, _ = env.step(a)
+        env.render()
+        time.sleep(0.5)
+
+    print("Done with {} steps in {} seconds!".format(T, time.time() - start))
+

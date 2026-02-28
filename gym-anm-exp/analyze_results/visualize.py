@@ -12,8 +12,9 @@ import time
 import argparse
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
-from rl_agents.hyperparameters import ENV_ID
+from rl_agents.hyperparameters import ENV_ID, MAX_EVAL_EP_LENGTH  # ADDED MAX_EVAL_EP_LENGTH
 from rl_agents.utils import load_visualization_env
+from rl_agents.wrappers import LagrangianWrapper, TimeLimitWrapper
 
 from gym_anm.simulator.components import Generator, StorageUnit
 
@@ -26,7 +27,7 @@ def get_anm_env(env):
 
 
 def print_env_info(anm_env):
-    """Print information about the environment's action and observation spaces."""
+    # print information about the environment's action and observation spaces
     print("\n")
     print("ENVIRONMENT INFORMATION")
     print("\n")
@@ -98,7 +99,7 @@ def print_env_info(anm_env):
         print("\n")
 
 
-def print_step_info(step, action, obs, reward, done, anm_env, action_time=None):
+def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=None):
     """Print detailed information about the current step."""
     print("\n")
     print(f"STEP {step}")
@@ -203,6 +204,7 @@ def print_step_info(step, action, obs, reward, done, anm_env, action_time=None):
 
     print(f"\nREWARD: {reward:.4f}")
     print(f"DONE: {done}")
+    print(f"INFO: {info}")
 
 
 def visualize(path, algo, T, sleep_time, print_steps):
@@ -213,13 +215,28 @@ def visualize(path, algo, T, sleep_time, print_steps):
     model = algo.load(os.path.join(path, 'best_model'))
     env = load_visualization_env(ENV_ID, os.path.join(path, 'training_vec_env'), 1)
 
-    # Create log file
+    # wrapped - ADDED HERE (but only if env is not already wrapped/vectorized)
+    # Note: load_visualization_env might return a VecEnv, so we need to be careful
+    # If it returns a single env, wrap it. If VecEnv, we need a different approach.
+    
+    # For now, assuming load_visualization_env returns a single env or we need to handle VecEnv case
+    # If env is a VecEnv, we cannot directly wrap it. Let's check:
+    if hasattr(env, 'envs'):
+        # It's a VecEnv - we need to wrap the inner envs or recreate
+        # For simplicity, let's assume we need to recreate with proper wrappers
+        print("Warning: env is vectorized. Wrappers should be applied inside env factory.")
+    else:
+        # Single env - safe to wrap
+        env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
+        env = LagrangianWrapper(env, v_tolerance=0.05, lambda_lr=0.0)
+
+    # Create log file - FIXED FILENAME FORMAT
     log_filename = os.path.join(path, f'visualization_log_{time.strftime("%Y%m%d_%H%M%S")}.txt')
     log_file = open(log_filename, 'w')
 
     print()
     print("IMPORTANT: gym-anm environments render in a BROWSER")
-    print("'Running on http://127.0.0.1:8050/'")
+    print("'Running on http://127.0.0.1:8050/ '")
     time.sleep(3)
 
     anm_env = get_anm_env(env)
@@ -243,6 +260,8 @@ def visualize(path, algo, T, sleep_time, print_steps):
     
     originStdout = sys.stdout
     sys.stdout = Output(log_file, print_to_console=print_steps)
+    
+    # REMOVED: sys.stdout = originStdout (this was the bug!)
 
     # Reset and first step
     obs = env.reset()
@@ -269,7 +288,7 @@ def visualize(path, algo, T, sleep_time, print_steps):
             
             obs, rewards, dones, info = env.step(action)
 
-            print_step_info(i+1, action[0], obs[0], rewards[0], dones[0], anm_env, action_time)
+            print_step_info(i+1, action[0], obs[0], rewards[0], dones[0], info, anm_env, action_time)
 
             anm_env.render()
                         
@@ -285,20 +304,19 @@ def visualize(path, algo, T, sleep_time, print_steps):
     
     # Print timing statistics
     if action_times:
-        print("\n" + "="*60)
         print("ACTION DECISION TIME STATISTICS")
-        print("="*60)
         print(f"Total steps: {len(action_times)}")
         print(f"Mean time: {sum(action_times)/len(action_times)*1000:.2f} ms")
         print(f"Min time: {min(action_times)*1000:.2f} ms")
         print(f"Max time: {max(action_times)*1000:.2f} ms")
         print(f"Std dev: {(sum((t - sum(action_times)/len(action_times))**2 for t in action_times) / len(action_times))**0.5 * 1000:.2f} ms")
-        print("="*60)
     
     sys.stdout = originStdout
+    log_file.close()  # ADDED: close the log file
 
     print("The web server will shut down.")
     env.close()
+
 
 def print_obs(obs, anm_env):
     obs_flat = obs.flatten()
@@ -339,90 +357,6 @@ def print_obs(obs, anm_env):
         elif isinstance(dev, StorageUnit):
             print(f"  Device {dev_id} ({type(dev).__name__}): {obs_flat[idx]:+.4f}")
             idx += 1
-
-def visualize(path, algo, T, sleep_time, print_steps):
-    """
-    Visualize a trained agent.
-    """
-    # Load agent and environment
-    model = algo.load(os.path.join(path, 'best_model'))
-    env = load_visualization_env(ENV_ID, os.path.join(path, 'training_vec_env'), 1)
-
-    # Create log file
-    log_filename = os.path.join(path, f'visualization_log_{time.strftime("%Y\\%m\\%d\\%H:%M:%S")}.txt')
-    log_file = open(log_filename, 'w')
-
-    print()
-    print("IMPORTANT: gym-anm environments render in a BROWSER")
-    print("'Running on http://127.0.0.1:8050/'")
-
-    anm_env = get_anm_env(env)
-
-    # Console output optional
-    class Output:
-        def __init__(self, file, print_to_console=True):
-            self.file = file
-            self.stdout = sys.stdout
-            self.print_to_console = print_to_console
-        
-        def write(self, text):
-            if self.print_to_console:
-                self.stdout.write(text)
-            self.file.write(text)
-        
-        def flush(self):
-            if self.print_to_console:
-                self.stdout.flush()
-            self.file.flush()
-    
-    originStdout = sys.stdout
-    sys.stdout = Output(log_file, print_to_console=print_steps)
-
-    sys.stdout = originStdout # Comment to print in shell
-
-
-    # Reset and first step
-    obs = env.reset()
-
-    print("\nInitializing web server...")
-    print_env_info(anm_env)
-
-    anm_env.render()
-    
-    print("\nStarting agent interaction...")
-    
-    done, state = False, None
-    action_times = []
-
-    try:
-        for i in range(T):
-            # Time the action prediction
-            start_time = time.time()
-            action, state = model.predict(obs, state=state, deterministic=True)
-            action_time = time.time() - start_time
-            action_times.append(action_time)
-            
-            obs, rewards, dones, info = env.step(action)
-
-            # Updated line with action_time parameter
-            print_step_info(i+1, action[0], obs[0], rewards[0], dones[0], anm_env, action_time)
-
-            anm_env.render()
-                        
-            time.sleep(sleep_time)
-            
-            if dones[0]:
-                print(f"\nEpisode finished at step {i+1}")
-                obs = env.reset()
-                state=None
-    
-    except KeyboardInterrupt:
-        print("\n\nVisualization interrupted by user")
-    
-    sys.stdout = originStdout
-
-    print("The web server will shut down.")
-    env.close()
 
 
 def parse_args():

@@ -57,17 +57,19 @@ network["bus"] = np.array(
 )
 
 network["device"] = np.array(
+       # BUS  TYPE  STAT  Q/P   PMAX  PMIN  QMAX  QMIN  PC1  QC1min QC1max PC2  QC2min SOC   EFF
     [
-        [0, 0, 0, None, 200, -200, 200, -200, None, None, None, None, None, None, None],
-        [1, 2, -1, 0.2, 0, -10, None, None, None, None, None, None, None, None, None],
-        [2, 2, 2, None, 30, 0, 30, -30, 20, None, 15, -15, None, None, None],
-        [3, 2, 3, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0, 0.9]
+        [0,    0,    0,    None, 200, -200,  200, -200, None, None,  None,  None, None,  None, None], # Slack
+        [1,    2,    -1,   0.2,  0,   -10,  None, None, None, None,  None,  None, None,  None, None], # House (Load)
+        [2,    2,    2,    None, 30,    0,   30,   -30,  20,  None,  15,    -15,  None,  None, None], # PV
+        [3,    2,    3,    None, 50,  -50,   50,   -50,  30,   -30,   25,    -25,  100,   0,    0.9]  # Battery
     ]
 )
 
 network["branch"] = np.array(
     [
         [0, 1, 0.0036, 0.1834, 0.0, 32, 1, 0],
-        [1, 2, 0.03, 0.022, 0.0, 25, 1, 0]
+        [1, 2, 0.03, 0.022, 0.0, 10, 1, 0]
     ]
 )
+# changed 25 to 10
