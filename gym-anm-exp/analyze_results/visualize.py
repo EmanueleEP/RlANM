@@ -14,20 +14,25 @@ from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 from rl_agents.hyperparameters import ENV_ID, MAX_EVAL_EP_LENGTH  # ADDED MAX_EVAL_EP_LENGTH
 from rl_agents.utils import load_visualization_env
-from rl_agents.wrappers import LagrangianWrapper, TimeLimitWrapper
+from rl_agents.wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper
 
 from gym_anm.simulator.components import Generator, StorageUnit
 
 
 def get_anm_env(env):
-    base_env = env.envs[0]
+    # Unwrap a (possibly vectorized) env to reach the base ANM environment
+    # Handle VecEnv
+    if hasattr(env, 'envs'):
+        base_env = env.envs[0]
+    else:
+        base_env = env
+    # Unwrap Monitor / Gymnasium wrappers
     while hasattr(base_env, "env"):
         base_env = base_env.env
     return base_env
 
-
 def print_env_info(anm_env):
-    # print information about the environment's action and observation spaces
+    """Print information about the environment's action and observation spaces."""
     print("\n")
     print("ENVIRONMENT INFORMATION")
     print("\n")
@@ -49,7 +54,6 @@ def print_env_info(anm_env):
         for dev_id, dev in sim.devices.items():
             dev_type = type(dev).__name__
 
-            # Only show non-slack generators and storage units (controllable)
             if isinstance(dev, Generator) and not dev.is_slack:
                 p_range = (dev.p_min * sim.baseMVA, dev.p_max * sim.baseMVA)
                 q_range = (dev.q_min * sim.baseMVA, dev.q_max * sim.baseMVA)
@@ -68,30 +72,27 @@ def print_env_info(anm_env):
                 print(f"    Action[{idx}] → Q: range {q_range} MVAr")
                 idx += 1
     else:
-        # fallback for Box spaces without a simulator
         print(f"  Raw Range: low={anm_env.action_space.low}, high={anm_env.action_space.high}")
-    
-    # Get device and bus information
+
     if hasattr(anm_env, 'simulator'):
         simulator = anm_env.simulator
-        
+
         print("\nCONTROLLABLE DEVICES:")
         for dev_id, dev in simulator.devices.items():
             dev_type = type(dev).__name__
-            # Only show non-slack generators and storage units (controllable devices)
             if dev_type in ['ClassicalGen', 'RenewableGen', 'StorageUnit']:
                 if hasattr(dev, 'is_slack') and dev.is_slack:
                     continue
                 p_range = f"[{dev.p_min * simulator.baseMVA:.2f}, {dev.p_max * simulator.baseMVA:.2f}] MW"
                 q_range = f"[{dev.q_min * simulator.baseMVA:.2f}, {dev.q_max * simulator.baseMVA:.2f}] MVAr"
                 print(f"  Device {dev_id} ({dev_type}): P={p_range}, Q={q_range}")
-        
+
         print("\nBUSES (Voltage Measurement Points):")
         for bus_id, bus in simulator.buses.items():
             bus_type = "Slack" if bus.is_slack else "PQ"
             v_range = f"[{bus.v_min:.3f}, {bus.v_max:.3f}] p.u."
             print(f"  Bus {bus_id} ({bus_type}): V={v_range}, BaseKV={bus.baseKV}")
-        
+
         print("\nLOADS:")
         for dev_id, dev in simulator.devices.items():
             if type(dev).__name__ == 'Load':
@@ -99,16 +100,16 @@ def print_env_info(anm_env):
         print("\n")
 
 
+
+
 def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=None):
     """Print detailed information about the current step."""
     print("\n")
     print(f"STEP {step}")
-    
-    # Add timing information if available
+
     if action_time is not None:
         print(f"ACTION DECISION TIME: {action_time*1000:.2f} ms")
-    
-    # Action information
+
     print("\nACTION TAKEN (Agent Commands):")
 
     if hasattr(anm_env, 'simulator'):
@@ -118,64 +119,52 @@ def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=
         print("  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)\n")
 
         for dev_id, dev in sim.devices.items():
-            dev_type = type(dev).__name__
-
-            # Identify controllable devices
             is_gen = isinstance(dev, Generator) and not dev.is_slack
             is_des = isinstance(dev, StorageUnit)
 
             if not (is_gen or is_des):
                 continue
 
-            # Active power control
             if action_idx < len(action):
                 raw_a_p = action[action_idx]
-                # Map raw action [-1,1] → physical bound
                 p_min = dev.p_min * sim.baseMVA
                 p_max = dev.p_max * sim.baseMVA
-                p_set = p_min + (raw_a_p + 1)/2 * (p_max - p_min)
+                p_set = p_min + (raw_a_p + 1) / 2 * (p_max - p_min)
                 clipped = ""
                 if p_set <= p_min + 1e-6: clipped = "(CLIPPED_MIN)"
                 if p_set >= p_max - 1e-6: clipped = "(CLIPPED_MAX)"
-
-                print(f"  Device {dev_id} ({dev_type})  P:"
-                    f" raw={raw_a_p:+.3f} → {p_set:.2f} MW  {clipped}")
+                print(f"  Device {dev_id} ({type(dev).__name__})  P:"
+                      f" raw={raw_a_p:+.3f} → {p_set:.2f} MW  {clipped}")
                 action_idx += 1
 
-            # Reactive power control (if available)
             if hasattr(dev, "q_min") and hasattr(dev, "q_max"):
                 if action_idx < len(action):
                     raw_a_q = action[action_idx]
                     q_min = dev.q_min * sim.baseMVA
                     q_max = dev.q_max * sim.baseMVA
-                    q_set = q_min + (raw_a_q + 1)/2 * (q_max - q_min)
+                    q_set = q_min + (raw_a_q + 1) / 2 * (q_max - q_min)
                     clipped = ""
                     if q_set <= q_min + 1e-6: clipped = "(CLIPPED_MIN)"
                     if q_set >= q_max - 1e-6: clipped = "(CLIPPED_MAX)"
-
                     print(f"                          Q:"
-                        f" raw={raw_a_q:+.3f} → {q_set:.2f} MVAr {clipped}")
+                          f" raw={raw_a_q:+.3f} → {q_set:.2f} MVAr {clipped}")
                     action_idx += 1
-
     else:
         print(f"  Raw action: {action}")
-    
-    # Voltage/State information
+
     print("\nVOLTAGE (PER UNIT) AT BUSES:")
     if hasattr(anm_env, 'simulator'):
         simulator = anm_env.simulator
-        
+
         if hasattr(simulator, 'state') and simulator.state is not None:
             bus_v_magn = simulator.state.get('bus_v_magn', None)
             if bus_v_magn is not None and 'pu' in bus_v_magn:
                 for bus_id, v in bus_v_magn['pu'].items():
                     bus = simulator.buses[bus_id]
-                    status = "OK"
-                    if v < bus.v_min or v > bus.v_max:
-                        status = "VIOLATION"
+                    status = "VIOLATION" if v < bus.v_min or v > bus.v_max else "OK"
                     bus_type = "Slack" if bus.is_slack else "PQ"
                     print(f"  Bus {bus_id} ({bus_type}): {v:.4f} p.u. - status: {status}")
-            
+
             print("\nDEVICE POWER INJECTIONS:")
             dev_p = simulator.state.get('dev_p', None)
             dev_q = simulator.state.get('dev_q', None)
@@ -184,161 +173,162 @@ def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=
                     dev_type = type(dev).__name__
                     p_mw = dev_p['MW'].get(dev_id, 0)
                     q_mvar = dev_q['MVAr'].get(dev_id, 0) if dev_q and 'MVAr' in dev_q else 0
-                    
+
                     if dev_type == 'StorageUnit':
                         soc_state = simulator.state.get('des_soc', {})
                         soc = soc_state.get('MWh', {}).get(dev_id, 0) if soc_state else 0
                         print(f"  Device {dev_id} ({dev_type}): P={p_mw:.3f} MW, Q={q_mvar:.3f} MVAr, SoC={soc:.3f} MWh")
                     else:
                         print(f"  Device {dev_id} ({dev_type}): P={p_mw:.3f} MW, Q={q_mvar:.3f} MVAr")
-            
+
             print("\nBRANCH POWER FLOWS:")
             branch_s = simulator.state.get('branch_s', None)
             if branch_s is not None and 'MVA' in branch_s:
                 for branch_id, branch in simulator.branches.items():
                     s_mva = branch_s['MVA'].get(branch_id, 0)
-                    status = "OK"
-                    if s_mva > branch.rate * simulator.baseMVA:
-                        status = "OVERLOAD"
-                    print(f"  Branch {branch_id}: S={s_mva:.3f} MVA (limit={branch.rate * simulator.baseMVA:.3f} MVA) - status: {status}")
+                    status = "OVERLOAD" if s_mva > branch.rate * simulator.baseMVA else "OK"
+                    print(f"  Branch {branch_id}: S={s_mva:.3f} MVA"
+                          f" (limit={branch.rate * simulator.baseMVA:.3f} MVA) - status: {status}")
 
     print(f"\nREWARD: {reward:.4f}")
     print(f"DONE: {done}")
     print(f"INFO: {info}")
 
 
+def make_env(env_id, vec_env_path, wrappers=True):
+    """
+    Create a single (non-vectorized) environment with the same wrappers
+    used during training, suitable for visualization.
+    """
+    import gymnasium as gym
+    from stable_baselines3.common.vec_env import DummyVecEnv
+
+    def _init():
+        env = gym.make(env_id)
+        if wrappers:
+            env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
+            env = NormalizeActionWrapper(env)
+            # lambda_lr=0.0 → multiplier frozen during eval (intentional)
+            env = LagrangianWrapper(env, v_tolerance=0.05, lambda_lr=0.0)
+        return env
+
+    return DummyVecEnv([_init])
+
+
 def visualize(path, algo, T, sleep_time, print_steps):
-    """
-    Visualize a trained agent.
-    """
-    # Load agent and environment
+    """Visualize a trained agent."""
+
+    # --- Load model ---
     model = algo.load(os.path.join(path, 'best_model'))
-    env = load_visualization_env(ENV_ID, os.path.join(path, 'training_vec_env'), 1)
 
-    # wrapped - ADDED HERE (but only if env is not already wrapped/vectorized)
-    # Note: load_visualization_env might return a VecEnv, so we need to be careful
-    # If it returns a single env, wrap it. If VecEnv, we need a different approach.
-    
-    # For now, assuming load_visualization_env returns a single env or we need to handle VecEnv case
-    # If env is a VecEnv, we cannot directly wrap it. Let's check:
-    if hasattr(env, 'envs'):
-        # It's a VecEnv - we need to wrap the inner envs or recreate
-        # For simplicity, let's assume we need to recreate with proper wrappers
-        print("Warning: env is vectorized. Wrappers should be applied inside env factory.")
-    else:
-        # Single env - safe to wrap
-        env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
-        env = LagrangianWrapper(env, v_tolerance=0.05, lambda_lr=0.0)
+    # --- Build a fresh VecEnv with correct wrappers applied BEFORE vectorization ---
+    env = make_env(ENV_ID, os.path.join(path, 'training_vec_env'), wrappers=True)
 
-    # Create log file - FIXED FILENAME FORMAT
+    # --- Unwrap to the base ANM env for rendering / inspection ---
+    anm_env = get_anm_env(env)
+
+    # --- Logging setup ---
     log_filename = os.path.join(path, f'visualization_log_{time.strftime("%Y%m%d_%H%M%S")}.txt')
     log_file = open(log_filename, 'w')
 
-    print()
-    print("IMPORTANT: gym-anm environments render in a BROWSER")
-    print("'Running on http://127.0.0.1:8050/ '")
-    time.sleep(3)
-
-    anm_env = get_anm_env(env)
-
-    # Console output optional
     class Output:
         def __init__(self, file, print_to_console=True):
             self.file = file
             self.stdout = sys.stdout
             self.print_to_console = print_to_console
-        
+
         def write(self, text):
             if self.print_to_console:
                 self.stdout.write(text)
             self.file.write(text)
-        
+
         def flush(self):
             if self.print_to_console:
                 self.stdout.flush()
             self.file.flush()
-    
-    originStdout = sys.stdout
-    sys.stdout = Output(log_file, print_to_console=print_steps)
-    
-    # REMOVED: sys.stdout = originStdout (this was the bug!)
 
-    # Reset and first step
-    obs = env.reset()
+    origin_stdout = sys.stdout
+    sys.stdout = Output(log_file, print_to_console=print_steps)
+
+    print()
+    print("IMPORTANT: gym-anm environments render in a BROWSER")
+    print("Running on http://127.0.0.1:8050/")
+    time.sleep(3)
+
+    # --- Reset: Gymnasium returns (obs, info) ---
+    reset_result = env.reset()
+    if isinstance(reset_result, tuple):
+        obs, _ = reset_result
+    else:
+        obs = reset_result  # old Gym / SB3 VecEnv returns obs directly
 
     print("\nInitializing web server...")
     print_env_info(anm_env)
-
     anm_env.render()
-    
     print("\nStarting agent interaction...")
-    
+
     done, state = False, None
-    
-    # Variables to track timing statistics
     action_times = []
 
     try:
         for i in range(T):
-            # Time the action prediction
             start_time = time.time()
             action, state = model.predict(obs, state=state, deterministic=True)
             action_time = time.time() - start_time
             action_times.append(action_time)
-            
+
             obs, rewards, dones, info = env.step(action)
 
-            print_step_info(i+1, action[0], obs[0], rewards[0], dones[0], info, anm_env, action_time)
-
+            print_step_info(i + 1, action[0], obs[0], rewards[0], dones[0], info, anm_env, action_time)
             anm_env.render()
-                        
             time.sleep(sleep_time)
-            
+
             if dones[0]:
-                print(f"\nEpisode finished at step {i+1}")
-                obs = env.reset()
-                state=None
-    
+                print(f"\nEpisode finished at step {i + 1}")
+                reset_result = env.reset()
+                if isinstance(reset_result, tuple):
+                    obs, _ = reset_result
+                else:
+                    obs = reset_result
+                state = None
+
     except KeyboardInterrupt:
         print("\n\nVisualization interrupted by user")
-    
-    # Print timing statistics
+
+    # --- Timing statistics ---
     if action_times:
-        print("ACTION DECISION TIME STATISTICS")
+        mean_t = sum(action_times) / len(action_times)
+        std_t = (sum((t - mean_t) ** 2 for t in action_times) / len(action_times)) ** 0.5
+        print("\nACTION DECISION TIME STATISTICS")
         print(f"Total steps: {len(action_times)}")
-        print(f"Mean time: {sum(action_times)/len(action_times)*1000:.2f} ms")
-        print(f"Min time: {min(action_times)*1000:.2f} ms")
-        print(f"Max time: {max(action_times)*1000:.2f} ms")
-        print(f"Std dev: {(sum((t - sum(action_times)/len(action_times))**2 for t in action_times) / len(action_times))**0.5 * 1000:.2f} ms")
-    
-    sys.stdout = originStdout
-    log_file.close()  # ADDED: close the log file
+        print(f"Mean time:   {mean_t * 1000:.2f} ms")
+        print(f"Min time:    {min(action_times) * 1000:.2f} ms")
+        print(f"Max time:    {max(action_times) * 1000:.2f} ms")
+        print(f"Std dev:     {std_t * 1000:.2f} ms")
+
+    sys.stdout = origin_stdout
+    log_file.close()
 
     print("The web server will shut down.")
     env.close()
 
 
+
 def print_obs(obs, anm_env):
+    """Print a breakdown of the agent's observation vector."""
     obs_flat = obs.flatten()
     sim = anm_env.simulator
-
-    # Compute sizes
-    n_buses = sim.N_bus
-    n_gens = sim.N_non_slack_gen
-    n_des = sim.N_des
 
     print("\nAGENT OBSERVATION:")
     print(f"  Shape: {obs.shape}")
     print(f"  Min: {obs_flat.min():.4f}, Max: {obs_flat.max():.4f}, Mean: {obs_flat.mean():.4f}\n")
 
-    # 1. Bus voltages
     print("Bus Voltages (p.u. deviation from 1.0):")
     for i, bus_id in enumerate(sim.buses.keys()):
         print(f"  Bus {bus_id}: {obs_flat[i]:+.4f}")
 
-    idx = n_buses
+    idx = sim.N_bus
 
-    # 2. Active power of generators and storage units
     print("\nActive Power (Generators & Storage Units, normalized):")
     for dev_id, dev in sim.devices.items():
         if isinstance(dev, Generator) and not dev.is_slack:
@@ -348,7 +338,6 @@ def print_obs(obs, anm_env):
             print(f"  Device {dev_id} ({type(dev).__name__}): {obs_flat[idx]:+.4f}")
             idx += 1
 
-    # 3. Reactive power / SoC of generators and storage units
     print("\nReactive Power / SoC (Generators & Storage Units, normalized):")
     for dev_id, dev in sim.devices.items():
         if isinstance(dev, Generator) and not dev.is_slack:

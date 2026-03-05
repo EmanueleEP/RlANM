@@ -56,3 +56,4 @@ lib/
 lib64
 share/
 gym-anm-exp/results
+**/__pycache__/

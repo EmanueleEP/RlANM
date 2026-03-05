@@ -75,6 +75,9 @@ class BCP(BCP_base):
     def next_vars(self, s_t):
         # old way
         aux = int((s_t[-1] + 1) % (24 / self.delta_t))
+
+        # DEBUG
+        #print(f"DEBUG t={aux} ({aux * self.delta_t:.1f}h), p_max={self.P_maxs[0][aux]:.2f} MW")
         
         # from file
         # aux = int((s_t[-1] + 1) % self._total_steps)  

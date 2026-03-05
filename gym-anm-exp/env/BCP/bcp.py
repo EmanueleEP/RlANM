@@ -107,14 +107,81 @@ class BCP_base(ANMEnv):
 
             self._update_render(dev_p, dev_q, branch_s, des_soc, gen_p_max, bus_v_magn, costs, network_collapsed)
 
+    def safe_array(self, x):
+        return np.array([np.nan if v is None else float(v) for v in x])
+
     def step(self, action):
         obs, r, terminated, truncated, info = super().step(action)
+
+        #print(dir(self.simulator))
 
         # Increment the date (for rendering).
         self.date += self.timestep_length
 
+        # extraction info from state
+        full_state = self.simulator.state
+
+        gen_p_max = np.array(list(full_state["gen_p_max"]["MW"].values()))
+        dev_p = np.array(list(full_state["dev_p"]["MW"].values()))
+        dev_q = np.array(list(full_state["dev_q"]["MVAr"].values()))
+
+        # curtailment penalty
+        curtailment = np.maximum(0, gen_p_max - dev_p)
+        curtailment_penalty = 0.001 * np.sum(curtailment)
+
+        device_data = self.simulator.devices
+        base_mva = self.simulator.baseMVA  
+        
+        device_type = np.array([getattr(dev, 'dev_type', 1) for dev in device_data.values()],dtype=np.int32)
+
+        p_max = np.array([dev.p_max for dev in device_data.values()], dtype=np.float32) * base_mva
+        p_min = np.array([dev.p_min for dev in device_data.values()], dtype=np.float32) * base_mva
+
+        q_max = np.array([dev.q_max for dev in device_data.values()], dtype=np.float32) * base_mva
+        q_min = np.array([dev.q_min for dev in device_data.values()], dtype=np.float32) * base_mva
+        
+        p_violation = np.zeros_like(dev_p)
+        q_violation = np.zeros_like(dev_q)
+
+        # active violations
+        for i in range(len(dev_p)):
+            if device_type[i] == 0:
+                continue
+            if not np.isnan(p_max[i]):
+                p_violation[i] += max(0, dev_p[i] - p_max[i])
+            if not np.isnan(p_min[i]):
+                p_violation[i] += max(0, p_min[i] - dev_p[i])
+
+        # reactive violations
+        for i in range(len(dev_q)):
+            if device_type[i] == 0:
+                continue
+            if not np.isnan(q_max[i]):
+                q_violation[i] += max(0, dev_q[i] - q_max[i])
+            if not np.isnan(q_min[i]):
+                q_violation[i] += max(0, q_min[i] - dev_q[i])
+
+        # voltage violations
+        bus_v = np.array(list(full_state["bus_v_magn"]["pu"].values()))
+
+        bus_objects = list(self.simulator.buses.values())
+        v_max = np.array([getattr(b, 'v_max', 1.1) for b in bus_objects], dtype=float)
+        v_min = np.array([getattr(b, 'v_min', 0.9) for b in bus_objects], dtype=float)
+
+        v_violation = np.maximum(0, bus_v - v_max) + \
+                    np.maximum(0, v_min - bus_v)
+
+        info["constraint_costs"] = np.array([
+            np.mean(v_violation),
+            np.mean(p_violation),
+            np.mean(q_violation),
+        ], dtype=np.float32)
+
         # Increment the year count.
         self.year_count = (self.date - self.date_init).days // 365
+
+        # setting penalty for wasting resources
+        r = r - curtailment_penalty
 
         return obs, r, terminated, truncated, info
 

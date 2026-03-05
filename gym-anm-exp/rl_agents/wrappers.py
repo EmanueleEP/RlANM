@@ -89,16 +89,20 @@ class LagrangianWrapper(gym.Wrapper):
         base_env = env.unwrapped
         self.n_buses = base_env.simulator.N_bus
 
-        # First n_buses entries of the observation are voltage deviations (V - 1.0)
         self.v_tol = v_tolerance
         self.lambda_lr = lambda_lr
         self.normalize = normalize_by_episode_length
         self.lambda_max = lambda_max
+        self.n_constraints = 3
 
-        self.lam = lambda_init          # scalar — single voltage constraint
-        self.cost_limit = cost_limit
+        lambda_init_arr = np.atleast_1d(np.array(lambda_init, dtype=np.float32))
+        if lambda_init_arr.shape == (self.n_constraints,):
+            self.lam = lambda_init_arr
+        else:
+            self.lam = np.full(self.n_constraints, float(lambda_init_arr[0]), dtype=np.float32)
 
-        self.episode_cost = 0.0
+        self.cost_limit = np.array([cost_limit, cost_limit, cost_limit], dtype=np.float32)
+        self.episode_cost = np.zeros(self.n_constraints, dtype=np.float32)
         self.episode_length = 0
 
     def get_lambda(self) -> float:
@@ -106,39 +110,32 @@ class LagrangianWrapper(gym.Wrapper):
         return self.lam
 
     def set_lambda(self, value: float):
-        """Restore a saved lambda value (useful when resuming training)."""
-        self.lam = float(np.clip(value, 0.0, self.lambda_max))
+        value = np.array(value, dtype=np.float32)
+        self.lam = np.clip(value, 0.0, self.lambda_max)
 
     def reset(self, **kwargs):
-        self.episode_cost = 0.0
+        self.episode_cost = np.zeros(self.n_constraints, dtype=np.float32)
         self.episode_length = 0
         return self.env.reset(**kwargs)
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
 
-        obs_flat = obs.flatten()
-
-        # voltage deviations extraction (obs already = V - 1.0)
-        voltage_deviation = obs_flat[:self.n_buses]
-
-        # instantaneous violation: how much each bus exceeds the tolerance band
-        violation = np.maximum(0.0, np.abs(voltage_deviation) - self.v_tol)
-        cost = float(np.mean(violation))
+        costs = info["constraint_costs"]
 
         # accumulate episode statistics
-        self.episode_cost += cost
+        self.episode_cost += costs
         self.episode_length += 1
 
-        # lagrangian penalty applied to reward
-        penalty = self.lam * cost
+        # lagrangian penalty
+        penalty = float(np.sum(self.lam.flatten() * np.array(costs, dtype=np.float32).flatten()))
         modified_reward = reward - penalty
 
         # logging
         info["original_reward"] = reward
-        info["voltage_violation"] = cost
+        info["constraint_costs"] = costs
         info["lagrangian_penalty"] = penalty
-        info["lambda"] = self.lam
+        info["lambda"] = self.lam.copy()
 
         # update lambda
         if terminated or truncated:
@@ -154,10 +151,11 @@ class LagrangianWrapper(gym.Wrapper):
             avg_cost = self.episode_cost
 
         gradient = avg_cost - self.cost_limit
-        self.lam = float(np.clip(self.lam + self.lambda_lr * gradient, 0.0, self.lambda_max))
+
+        self.lam = np.clip(self.lam + self.lambda_lr * gradient, 0.0, self.lambda_max)
 
         print(
-            f"Episode ended | Steps: {self.episode_length} | "
-            f"Avg voltage violation: {avg_cost:.6f} | "
-            f"New lambda: {self.lam:.6f}"
+            f"Episode ended | Steps: {self.episode_length}\n"
+            f"Avg costs: {avg_cost}\n"
+            f"New lambdas: {self.lam}\n"
         )

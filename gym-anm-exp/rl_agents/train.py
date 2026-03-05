@@ -14,10 +14,12 @@ All other hyperparameter values are taken from `hyperparameters.py`.
 """
 import os
 import numpy as np
+
 import gymnasium as gym
 
 from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.env_util import make_vec_env  # ADD THIS IMPORT
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 
@@ -25,7 +27,7 @@ import torch
 from .hyperparameters import *
 from .callbacks import ProgressBarManager, EvalCallback
 from .utils import save_hyperparameters, parse_args, make_log_dirs  # REMOVED make_envs, added save_hyperparameters
-from .wrappers import LagrangianWrapper, TimeLimitWrapper
+from .wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper
 
 # Read command line arguments.
 args = parse_args()
@@ -62,6 +64,8 @@ if continuing_training and os.path.exists(LAMBDA_PATH):
     saved_lambda = float(np.load(LAMBDA_PATH))
     lambda_init_value = saved_lambda
     print(f"Restored lambda from checkpoint: {lambda_init_value:.6f}")
+else:
+    lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
 
 if continuing_training:
     print(f"Found existing model at {AGENT_PATH}")
@@ -89,20 +93,14 @@ else:
 # Set random seed
 set_random_seed(SEED)
 
-# ---------------------------------------------------------------------------
-# Env factory - WRAPPERS APPLIED INSIDE FACTORY (before vectorization)
-# ---------------------------------------------------------------------------
+
+
 def make_train_env(rank: int = 0):
-    """Factory that returns a single wrapped training env."""
     def _init():
         env = gym.make(ENV_ID)
         env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
-        env = LagrangianWrapper(
-            env,
-            v_tolerance=V_TOLERANCE,
-            lambda_lr=LAMBDA_LR,
-            lambda_init=lambda_init_value,
-        )
+        env = NormalizeActionWrapper(env)   # ← add this
+        env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=LAMBDA_LR, lambda_init=lambda_init_value)
         env.reset(seed=SEED + rank)
         return env
     return _init
@@ -113,25 +111,18 @@ def make_eval_env(rank: int = 0):
     def _init():
         env = gym.make(ENV_ID)
         env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
+        env = NormalizeActionWrapper(env) 
         # lambda_lr=0 disables dual updates during evaluation
-        env = LagrangianWrapper(
-            env,
-            v_tolerance=V_TOLERANCE,
-            lambda_lr=0.0,  # No learning during eval
-            lambda_init=lambda_init_value,
-        )
+        env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=0.0, lambda_init=lambda_init_value,)
         env.reset(seed=SEED + 1000 + rank)
         return env
     return _init
 
-# ---------------------------------------------------------------------------
-# Build vectorised environments
-# ---------------------------------------------------------------------------
 print("Creating environments...")
 try:
     # Use make_vec_env with factory functions - this is the CORRECT way
-    train_env = make_vec_env(make_train_env(), n_envs=N_ENVS, seed=SEED)
-    eval_env = make_vec_env(make_eval_env(), n_envs=1, seed=SEED + 1000)
+    train_env = DummyVecEnv([make_train_env(rank=i) for i in range(N_ENVS)])
+    eval_env = DummyVecEnv([make_eval_env(rank=0)])
     print("Environments created successfully")
 
 except Exception as e:
@@ -168,7 +159,7 @@ if old_data is not None:
     eval_callback.evaluations_results = old_results
     eval_callback.evaluations_length = old_ep_lengths
     if old_discounted is not None:
-        eval_callback.evaluations_discounted = old_discounted
+        eval_callback.evaluation_discounted_results = old_discounted
         if hasattr(eval_callback, '_is_discounted_set'):
             eval_callback._is_discounted_set = True
 
@@ -207,26 +198,22 @@ if __name__ == "__main__":
                        callback=callbacks,
                        reset_num_timesteps=not continuing_training)
         print("Training completed successfully!")
-        
-        # ------------------------------------------------------------------
-        # Persist lambda values so they survive across restarts
-        # ------------------------------------------------------------------
+
         try:
-            # Access the underlying envs and get lambda from each
-            env_fns = train_env.envs if hasattr(train_env, 'envs') else []
             lambdas = []
-            for e in env_fns:
-                # Unwrap to reach LagrangianWrapper
+            for e in train_env.envs:
                 inner = e
                 while hasattr(inner, 'env'):
                     if isinstance(inner, LagrangianWrapper):
-                        lambdas.append(inner.get_lambda())
+                        lambdas.append(inner.get_lambda())  # shape (3,)
                         break
                     inner = inner.env
+
             if lambdas:
-                avg_lambda = float(np.mean(lambdas))
+                # Stack into (N_ENVS, 3) and average across envs → shape (3,)
+                avg_lambda = np.mean(np.stack(lambdas, axis=0), axis=0)
                 np.save(LAMBDA_PATH, avg_lambda)
-                print(f"Saved lambda={avg_lambda:.6f} to {LAMBDA_PATH}")
+                print(f"Saved lambdas={avg_lambda} to {LAMBDA_PATH}")
         except Exception as e:
             print(f"Warning: could not save lambda state: {e}")
         

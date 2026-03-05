@@ -198,7 +198,7 @@ def write_html(address):
     <script src="js/reward.js"></script>
     <script src="js/text.js"></script>
     <script src="envs/bcp/svgLabels.js"></script>
-    <title>gym-anm:BCP</title>
+    <title>gym:BCP</title>
 </head>
 
 <body onload="init();">

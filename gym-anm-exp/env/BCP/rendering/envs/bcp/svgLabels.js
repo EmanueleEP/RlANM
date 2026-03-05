@@ -33,6 +33,11 @@ let svgReward = {
     'posColor': "#31b620",
 };
 
+let svgWeather = {
+    'text': 'weather_state',
+    'icon': 'weather_icon'
+};
+
 let svgParams = {
     'svgRootId': 'svg4693',
     'pInjHeight': 19.8,
@@ -50,6 +55,8 @@ let svgParams = {
     'date': 'tspan5951',
     'time': 'tspan5955',
     'yearCount': 'tspan1071',
+    'reward': svgReward,
+    'weather': svgWeather,
     'title': 'text5968',
     'networkCollapsedCheckMark': 'text6301',
     'networkCollapsedGroup': ['text1128', 'text6301']  //'rect6315'
@@ -75,5 +82,4 @@ let svgStorageUnits = [
 let svgBuses = [
     {'vMagnText': 'text1153', 'brokenCross': ['path1131', 'path1133']},
     {'vMagnText': 'text1159', 'brokenCross': ['path1123', 'path1125']},
-    {'vMagnText': 'text1077', 'brokenCross': ['path1098', 'path1100']}
-]
+    {'vMagnText': 'text1077', 'brokenCross': ['path1098', 'path1100']}];
