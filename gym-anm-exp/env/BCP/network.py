@@ -16,7 +16,7 @@ import numpy as np
 
 ### 2. Device data:
 # BUS_I: bus number.
-# DEV_TYPE: -1 (load), 0 (slack), 1 (power plant), 2 (wind), 3 (solar), 4 (storage).
+# DEV_TYPE: -1 (load), 0 (slack), 1 (power plant), 2 (wind)/(solar), 3 (storage).
 # Q/P: constant ratio of reactive power over real power.
 # QMAX: maximum reactive power output (MVAr).
 # QMIN: minimum reactive power output (MVAr).
@@ -56,14 +56,30 @@ network["bus"] = np.array(
     ]
 )
 
+"""
 network["device"] = np.array(
     [
         [0, 0, 0, None, 200, -200, 200, -200, None, None, None, None, None, None, None],  # slack
-        [1, 2, -1, 0.2, 0, -10, None, None, None, None, None, None, None, None, None],  # house
+        [2, 2, -1, 0.2, 0, -10, None, None, None, None, None, None, None, None, None],  # house
         [2, 2, 2, None, 30, 0, 30, -30, 20, None, 15, -15, None, None, None], # solar 
-        [3, 2, 3, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0, 0.9],    # battery
+        [2, 2, 4, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0, 0.9],    # battery
     ]
+)"""
+
+_device_rows = np.array(
+    [
+        [0, 0, 0, None, 200, -200, 200, -200, None, None, None, None, None, None, None],  # slack
+        [1, 2, -1, 0.2, 0, -10, None, None, None, None, None, None, None, None, None],  # load
+        [2, 2, 2, None, 30, 0, 30, -30, 20, None, 15, -15, None, None, None], # solar
+        [3, 2, 3, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0.1, 0.9],  # battery
+    ],
+    dtype=object 
 )
+network["device"] = np.empty((len(_device_rows), len(_device_rows[0])), dtype=object)
+for i, row in enumerate(_device_rows):
+    for j, val in enumerate(row):
+        network["device"][i, j] = val
+
 
 network["branch"] = np.array(
     [
@@ -72,3 +88,5 @@ network["branch"] = np.array(
     ]
 )
 # changed 25 to 10
+
+

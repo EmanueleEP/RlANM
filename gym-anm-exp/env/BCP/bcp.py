@@ -125,9 +125,14 @@ class BCP_base(ANMEnv):
         dev_p = np.array(list(full_state["dev_p"]["MW"].values()))
         dev_q = np.array(list(full_state["dev_q"]["MVAr"].values()))
 
+        storage_device_ids = [3] # battery index
+        curtailment = np.maximum(0, gen_p_max - dev_p[[2]])
+
         # curtailment penalty
-        curtailment = np.maximum(0, gen_p_max - dev_p)
-        curtailment_penalty = 0.001 * np.sum(curtailment)
+        curtailment_penalty = 0.5 * np.sum(curtailment)
+
+        # MW currently being wasted
+        pv_surplus = float(np.sum(curtailment))  
 
         device_data = self.simulator.devices
         base_mva = self.simulator.baseMVA  
@@ -173,15 +178,35 @@ class BCP_base(ANMEnv):
 
         info["constraint_costs"] = np.array([
             np.mean(v_violation),
-            np.mean(p_violation),
-            np.mean(q_violation),
+            np.mean(p_violation) / base_mva,
+            np.mean(q_violation) / base_mva,
         ], dtype=np.float32)
+
+        # battery absorption
+
+        battery_charging = 0.0
+        for dev_id in storage_device_ids:
+            p_battery = dev_p[dev_id]
+            if p_battery < 0:
+                battery_charging += abs(p_battery)
+        
+        absorbed = min(battery_charging, pv_surplus)
+        self_consumption_bonus = 0.4 * absorbed
 
         # Increment the year count.
         self.year_count = (self.date - self.date_init).days // 365
 
+        # make battery more active
+        des_soc = list(full_state["des_soc"]["MWh"].values())
+        for dev_id in storage_device_ids:
+            soc = des_soc[0]
+            soc_max = self.simulator.devices[dev_id].soc_max * self.simulator.baseMVA
+            soc_ratio = soc / soc_max if soc_max > 0 else 0.0
+            soc_readiness = -0.1 * (soc_ratio - 0.5) ** 2
+            r += soc_readiness
+
         # setting penalty for wasting resources
-        r = r - curtailment_penalty
+        r = r - curtailment_penalty + self_consumption_bonus
 
         return obs, r, terminated, truncated, info
 

@@ -28,6 +28,7 @@ from .hyperparameters import *
 from .callbacks import ProgressBarManager, EvalCallback
 from .utils import save_hyperparameters, parse_args, make_log_dirs  # REMOVED make_envs, added save_hyperparameters
 from .wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper
+from .lambda_sync_callback import LambdaSyncCallback
 
 # Read command line arguments.
 args = parse_args()
@@ -56,16 +57,14 @@ continuing_training = os.path.exists(AGENT_PATH)
 
 # lagrangian parameters
 V_TOLERANCE = 0.05
-LAMBDA_LR = 5e-5
+LAMBDA_LR = 1e-3
 
 # Restore lambda from disk if continuing training
-lambda_init_value = 1.0
-if continuing_training and os.path.exists(LAMBDA_PATH):
-    saved_lambda = float(np.load(LAMBDA_PATH))
-    lambda_init_value = saved_lambda
-    print(f"Restored lambda from checkpoint: {lambda_init_value:.6f}")
-else:
-    lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+
+if USE_LAGRANGIAN and continuing_training and os.path.exists(LAMBDA_PATH):
+    lambda_init_value = np.load(LAMBDA_PATH).astype(np.float32)  # keep shape (3,)
+    print(f"Restored lambda from checkpoint: {lambda_init_value}")
 
 if continuing_training:
     print(f"Found existing model at {AGENT_PATH}")
@@ -99,8 +98,9 @@ def make_train_env(rank: int = 0):
     def _init():
         env = gym.make(ENV_ID)
         env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
-        env = NormalizeActionWrapper(env)   # ← add this
-        env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=LAMBDA_LR, lambda_init=lambda_init_value)
+        env = NormalizeActionWrapper(env)
+        if USE_LAGRANGIAN:
+            env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=LAMBDA_LR, lambda_init=lambda_init_value)
         env.reset(seed=SEED + rank)
         return env
     return _init
@@ -113,7 +113,8 @@ def make_eval_env(rank: int = 0):
         env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
         env = NormalizeActionWrapper(env) 
         # lambda_lr=0 disables dual updates during evaluation
-        env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=0.0, lambda_init=lambda_init_value,)
+        if USE_LAGRANGIAN:
+            env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=0.0, lambda_init=lambda_init_value)
         env.reset(seed=SEED + 1000 + rank)
         return env
     return _init
@@ -163,7 +164,12 @@ if old_data is not None:
         if hasattr(eval_callback, '_is_discounted_set'):
             eval_callback._is_discounted_set = True
 
-callbacks = [eval_callback]
+
+if USE_LAGRANGIAN and N_ENVS > 1:
+    sync_callback = LambdaSyncCallback(train_env, verbose=1)
+    callbacks = [eval_callback, sync_callback]
+else:
+    callbacks = [eval_callback]
 
 print("Creating model...")
 
@@ -199,23 +205,24 @@ if __name__ == "__main__":
                        reset_num_timesteps=not continuing_training)
         print("Training completed successfully!")
 
-        try:
-            lambdas = []
-            for e in train_env.envs:
-                inner = e
-                while hasattr(inner, 'env'):
+        # Save lambda state if Lagrangian was used
+        if USE_LAGRANGIAN:
+            try:
+                lambdas = []
+                while True:
                     if isinstance(inner, LagrangianWrapper):
-                        lambdas.append(inner.get_lambda())  # shape (3,)
+                        lambdas.append(inner.get_lambda())
+                        break
+                    if not hasattr(inner, 'env'):
                         break
                     inner = inner.env
 
-            if lambdas:
-                # Stack into (N_ENVS, 3) and average across envs → shape (3,)
-                avg_lambda = np.mean(np.stack(lambdas, axis=0), axis=0)
-                np.save(LAMBDA_PATH, avg_lambda)
-                print(f"Saved lambdas={avg_lambda} to {LAMBDA_PATH}")
-        except Exception as e:
-            print(f"Warning: could not save lambda state: {e}")
+                if lambdas:
+                    avg_lambda = np.mean(np.stack(lambdas, axis=0), axis=0)
+                    np.save(LAMBDA_PATH, avg_lambda)
+                    print(f"Saved lambdas={avg_lambda} to {LAMBDA_PATH}")
+            except Exception as e:
+                print(f"Warning: could not save lambda state: {e}")
         
     except Exception as e:
         print(f"Error during training: {e}")

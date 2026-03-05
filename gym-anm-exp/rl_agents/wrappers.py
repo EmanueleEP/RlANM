@@ -78,12 +78,13 @@ class LagrangianWrapper(gym.Wrapper):
         self,
         env: gym.Env,
         v_tolerance: float = 0.05,
-        cost_limit: float = 0.0,
+        pq_limit: float = 0.0,
         lambda_init: float = 1.0,
         lambda_lr: float = 5e-5,
         normalize_by_episode_length: bool = True,
         lambda_max: float = 100.0,
     ):
+
         super().__init__(env)
 
         base_env = env.unwrapped
@@ -95,13 +96,14 @@ class LagrangianWrapper(gym.Wrapper):
         self.lambda_max = lambda_max
         self.n_constraints = 3
 
+        self.cost_limit = np.array([v_tolerance, pq_limit, pq_limit], dtype=np.float32)
+        
         lambda_init_arr = np.atleast_1d(np.array(lambda_init, dtype=np.float32))
         if lambda_init_arr.shape == (self.n_constraints,):
             self.lam = lambda_init_arr
         else:
             self.lam = np.full(self.n_constraints, float(lambda_init_arr[0]), dtype=np.float32)
 
-        self.cost_limit = np.array([cost_limit, cost_limit, cost_limit], dtype=np.float32)
         self.episode_cost = np.zeros(self.n_constraints, dtype=np.float32)
         self.episode_length = 0
 
@@ -109,8 +111,10 @@ class LagrangianWrapper(gym.Wrapper):
         """Return the current lambda value (useful for checkpointing)."""
         return self.lam
 
-    def set_lambda(self, value: float):
-        value = np.array(value, dtype=np.float32)
+    def set_lambda(self, value):
+        value = np.asarray(value, dtype=np.float32)
+        if value.shape != (self.n_constraints,):
+            value = np.full(self.n_constraints, float(value.flat[0]), dtype=np.float32)
         self.lam = np.clip(value, 0.0, self.lambda_max)
 
     def reset(self, **kwargs):
@@ -121,14 +125,15 @@ class LagrangianWrapper(gym.Wrapper):
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
 
-        costs = info["constraint_costs"]
+        # Defensive get in case constraint_costs is missing (e.g. on first step or env variants)
+        costs = info.get("constraint_costs", np.zeros(self.n_constraints, dtype=np.float32))
 
         # accumulate episode statistics
         self.episode_cost += costs
         self.episode_length += 1
 
         # lagrangian penalty
-        penalty = float(np.sum(self.lam.flatten() * np.array(costs, dtype=np.float32).flatten()))
+        penalty = float(np.dot(self.lam, costs))
         modified_reward = reward - penalty
 
         # logging
@@ -138,7 +143,7 @@ class LagrangianWrapper(gym.Wrapper):
         info["lambda"] = self.lam.copy()
 
         # update lambda
-        if terminated or truncated:
+        if (terminated or truncated) and self.lambda_lr > 0.0:
             self._update_lambda()
 
         return obs, modified_reward, terminated, truncated, info
@@ -156,6 +161,7 @@ class LagrangianWrapper(gym.Wrapper):
 
         print(
             f"Episode ended | Steps: {self.episode_length}\n"
-            f"Avg costs: {avg_cost}\n"
-            f"New lambdas: {self.lam}\n"
+            f"Avg costs:  {avg_cost}  (limit: {self.cost_limit})\n"
+            f"Gradient:   {gradient}\n"
+            f"New lambda: {self.lam}\n"
         )
