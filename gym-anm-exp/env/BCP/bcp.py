@@ -183,7 +183,6 @@ class BCP_base(ANMEnv):
         ], dtype=np.float32)
 
         # battery absorption
-
         battery_charging = 0.0
         for dev_id in storage_device_ids:
             p_battery = dev_p[dev_id]
@@ -202,7 +201,7 @@ class BCP_base(ANMEnv):
             soc = des_soc[0]
             soc_max = self.simulator.devices[dev_id].soc_max * self.simulator.baseMVA
             soc_ratio = soc / soc_max if soc_max > 0 else 0.0
-            soc_readiness = -0.1 * (soc_ratio - 0.5) ** 2
+            soc_readiness = -0.3 * (soc_ratio - 0.5) ** 2
             r += soc_readiness
 
         # setting penalty for wasting resources

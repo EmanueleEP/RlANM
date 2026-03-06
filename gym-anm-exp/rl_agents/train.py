@@ -20,6 +20,7 @@ import gymnasium as gym
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 
@@ -101,6 +102,7 @@ def make_train_env(rank: int = 0):
         env = NormalizeActionWrapper(env)
         if USE_LAGRANGIAN:
             env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=LAMBDA_LR, lambda_init=lambda_init_value)
+        env = Monitor(env, LOG_DIR)
         env.reset(seed=SEED + rank)
         return env
     return _init
@@ -115,6 +117,7 @@ def make_eval_env(rank: int = 0):
         # lambda_lr=0 disables dual updates during evaluation
         if USE_LAGRANGIAN:
             env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=0.0, lambda_init=lambda_init_value)
+        env = Monitor(env, LOG_DIR)
         env.reset(seed=SEED + 1000 + rank)
         return env
     return _init
