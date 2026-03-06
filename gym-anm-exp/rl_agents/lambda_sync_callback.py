@@ -4,7 +4,7 @@ from .wrappers import LagrangianWrapper
 
 
 def _find_lagrangian(env):
-    """Walk the wrapper stack and return the LagrangianWrapper, or None."""
+    # return the LagrangianWrapper or None
     inner = env
     while inner is not None:
         if isinstance(inner, LagrangianWrapper):
