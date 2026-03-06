@@ -135,6 +135,38 @@ class EvalCallback(EventCallback):
         if self.log_path is not None:
             os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
+    def _sync_lambda(self):
+        # Copy the average lambda from training envs into the eval env"
+        from .wrappers import LagrangianWrapper
+
+        def find_lagrangian(env):
+            inner = env
+            while True:
+                if isinstance(inner, LagrangianWrapper):
+                    return inner
+                if not hasattr(inner, 'env'):
+                    return None
+                inner = inner.env
+
+        # Collect lambdas from all training envs
+        lambdas = []
+        for e in self.training_env.envs:
+            w = find_lagrangian(e)
+            if w is not None:
+                lambdas.append(w.get_lambda())
+
+        if not lambdas:
+            return  # no LagrangianWrapper found, nothing to sync
+
+        avg_lam = np.mean(np.stack(lambdas), axis=0)
+
+        # Push to eval env
+        w = find_lagrangian(self.eval_env.envs[0])
+        if w is not None:
+            w.set_lambda(avg_lam)
+            if self.verbose > 0:
+                print(f"[EvalCallback] synced lambda = {avg_lam}")
+
     def _on_step(self) -> bool:
 
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
