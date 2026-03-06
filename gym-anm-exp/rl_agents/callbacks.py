@@ -141,6 +141,8 @@ class EvalCallback(EventCallback):
             # Sync training and eval env if there is VecNormalize
             sync_envs_normalization(self.training_env, self.eval_env)
 
+            self._sync_lambda()
+
             episode_rewards, episode_lengths, episode_discounted_rewards = evaluate_policy(
                 self.model,
                 self.eval_env,

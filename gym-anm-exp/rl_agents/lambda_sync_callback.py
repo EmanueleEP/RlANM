@@ -1,7 +1,3 @@
-"""
-Keeps Lagrangian lambdas in sync across parallel training environments.
-After any episode ends, averages all lambdas and broadcasts back to every env.
-"""
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 from .wrappers import LagrangianWrapper
@@ -18,6 +14,7 @@ def _find_lagrangian(env):
 
 
 class LambdaSyncCallback(BaseCallback):
+
     def __init__(self, vec_env, verbose=0):
         super().__init__(verbose)
         self._wrappers = []
