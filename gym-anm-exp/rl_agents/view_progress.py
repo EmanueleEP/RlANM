@@ -73,8 +73,21 @@ for run_folder in run_folders:
         if t is None:
             print(f'RUN_ID: {run_id}, ALGO: {algo}, model evaluated but timing data incomplete')
         else:
-            print(f'RUN_ID: {run_id}, ALGO: {algo}, last timestep={timestep}, last return={result:.1f}, '
-                  f'last disc_return={disc_result:.1f}, last ep_length={ep_length}, t={t/3600:.1f} hours')
+            # Check if this was a Lagrangian run
+            is_lagrangian = False
+            if os.path.exists(hyper_path):
+                with open(hyper_path, 'r') as f:
+                    for line in f.readlines():
+                        if 'USE_LAGRANGIAN' in line and 'True' in line:
+                            is_lagrangian = True
+
+            tag = '[Lagrangian]' if is_lagrangian else '[Standard] '
+            print(f'{tag} RUN_ID: {run_id}, ALGO: {algo}, '
+                f'last timestep={timestep}, '
+                f'last return={result:.1f}, '
+                f'last disc_return={disc_result:.1f}, '
+                f'last ep_length={ep_length}, '
+                f't={t/3600:.1f} hours')
         
         successful_runs += 1
     

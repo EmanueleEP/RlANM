@@ -87,6 +87,7 @@ else:
         'TRAIN_STEPS': TRAIN_STEPS,
         'GAMMA': GAMMA,
         'MAX_EVAL_EP_LENGTH': MAX_EVAL_EP_LENGTH,
+        'USE_LAGRANGIAN': USE_LAGRANGIAN,
     }
     save_hyperparameters(LOG_DIR, PARAMS)
 

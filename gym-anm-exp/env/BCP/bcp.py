@@ -41,52 +41,16 @@ class BCP_base(ANMEnv):
         self.is_rendering = False
 
     def render(self, mode="human", skip_frames=0):
-        """
-        Render the current state of the environment.
-
-        Visualizing the agent-environment interactions in real-time (e.g.,
-        during training) is hard to follow and not very useful, as the state of
-        the distribution network changes too quickly (you can try with
-        :code:`mode='human'` and :code`skip_frames=0`). Instead, setting :code:`skip_frames>0`
-        will only update the rendering of the environment every `skip_frames`+1
-        steps (assuming :code:`render(skip_frames)` is called after every step),
-        which will make it much easier to follow for the human eye.
-
-        Parameters
-        ----------
-        mode : {'human'}, optional
-            The mode of rendering. If 'human', the environment is rendered while
-            the agent interacts with it.
-        skip_frames : int, optional
-            The number of frames (steps) to skip when rendering the environment.
-            For example, :code:`skip_frames=3` will update the rendering of the
-            environment every 4 calls to :py:func:`render()`.
-
-        Raises
-        ------
-        NotImplementedError
-            If a non-valid mode is specified.
-
-        Notes
-        -----
-        1. The use of :code:`mode='human'` and :code:`skip_frames>0` assumes that :py:func`render()`
-           is called after each step the agent takes in the environment.
-           The same behavior can be achieved with :code:`skip_frames=0` and calling
-           :py:func`render()` less frequently.
-        """
-
         if self.render_mode is None:
             if mode not in ["human"]:
                 raise NotImplementedError()
 
-            # Render the initial image of the distribution network.
             self.render_mode = mode
             self.skipped_frames = 0
             rendered_network_specs = ["dev_type", "dev_p", "dev_q", "branch_s", "bus_v", "des_soc"]
             specs = {s: self.network_specs[s] for s in rendered_network_specs}
             self._init_render(specs)
 
-            # Render the initial state.
             self.render(mode=mode, skip_frames=skip_frames)
             self.is_rendering = True
 
@@ -113,42 +77,31 @@ class BCP_base(ANMEnv):
     def step(self, action):
         obs, r, terminated, truncated, info = super().step(action)
 
-        #print(dir(self.simulator))
-
-        # Increment the date (for rendering).
+        # Increment the date for rendering
         self.date += self.timestep_length
 
-        # extraction info from state
+        # Extract state
         full_state = self.simulator.state
-
         gen_p_max = np.array(list(full_state["gen_p_max"]["MW"].values()))
         dev_p = np.array(list(full_state["dev_p"]["MW"].values()))
         dev_q = np.array(list(full_state["dev_q"]["MVAr"].values()))
 
-        storage_device_ids = [3] # battery index
-        curtailment = np.maximum(0, gen_p_max - dev_p[[2]])
-
-        # curtailment penalty
-        curtailment_penalty = 0.5 * np.sum(curtailment)
-
-        # MW currently being wasted
-        pv_surplus = float(np.sum(curtailment))  
-
         device_data = self.simulator.devices
-        base_mva = self.simulator.baseMVA  
-        
-        device_type = np.array([getattr(dev, 'dev_type', 1) for dev in device_data.values()],dtype=np.int32)
+        base_mva = self.simulator.baseMVA
+
+        device_type = np.array(
+            [getattr(dev, 'dev_type', 1) for dev in device_data.values()], dtype=np.int32
+        )
 
         p_max = np.array([dev.p_max for dev in device_data.values()], dtype=np.float32) * base_mva
         p_min = np.array([dev.p_min for dev in device_data.values()], dtype=np.float32) * base_mva
-
         q_max = np.array([dev.q_max for dev in device_data.values()], dtype=np.float32) * base_mva
         q_min = np.array([dev.q_min for dev in device_data.values()], dtype=np.float32) * base_mva
-        
+
+        # Constraint violations for Lagrangian
         p_violation = np.zeros_like(dev_p)
         q_violation = np.zeros_like(dev_q)
 
-        # active violations
         for i in range(len(dev_p)):
             if device_type[i] == 0:
                 continue
@@ -157,7 +110,6 @@ class BCP_base(ANMEnv):
             if not np.isnan(p_min[i]):
                 p_violation[i] += max(0, p_min[i] - dev_p[i])
 
-        # reactive violations
         for i in range(len(dev_q)):
             if device_type[i] == 0:
                 continue
@@ -166,15 +118,11 @@ class BCP_base(ANMEnv):
             if not np.isnan(q_min[i]):
                 q_violation[i] += max(0, q_min[i] - dev_q[i])
 
-        # voltage violations
         bus_v = np.array(list(full_state["bus_v_magn"]["pu"].values()))
-
         bus_objects = list(self.simulator.buses.values())
         v_max = np.array([getattr(b, 'v_max', 1.1) for b in bus_objects], dtype=float)
         v_min = np.array([getattr(b, 'v_min', 0.9) for b in bus_objects], dtype=float)
-
-        v_violation = np.maximum(0, bus_v - v_max) + \
-                    np.maximum(0, v_min - bus_v)
+        v_violation = np.maximum(0, bus_v - v_max) + np.maximum(0, v_min - bus_v)
 
         info["constraint_costs"] = np.array([
             np.mean(v_violation),
@@ -182,30 +130,43 @@ class BCP_base(ANMEnv):
             np.mean(q_violation) / base_mva,
         ], dtype=np.float32)
 
-        # battery absorption
-        battery_charging = 0.0
-        for dev_id in storage_device_ids:
-            p_battery = dev_p[dev_id]
-            if p_battery < 0:
-                battery_charging += abs(p_battery)
-        
-        absorbed = min(battery_charging, pv_surplus)
-        self_consumption_bonus = 0.4 * absorbed
+        # General reward shaping
+
+        # Penalise curtailment of ANY local generator (wasted local energy).
+        #    gen_p_max has one entry per generator; dev_p is indexed over all devices.
+        gen_dev_ids = [
+            i for i, dev in enumerate(device_data.values())
+            if getattr(dev, 'dev_type', 0) == 2  # dev_type=2 means non-controllable generator
+        ]
+        if len(gen_dev_ids) > 0:
+            curtailment = np.maximum(0, gen_p_max - dev_p[gen_dev_ids])
+        else:
+            curtailment = np.zeros(1)
+        curtailment_penalty = 0.5 * np.sum(curtailment)
+
+        # Penalise importing power from the slack bus (grid dependency).
+        #    Slack is always device 0. Positive dev_p[0] means importing from grid.
+        slack_import = max(0.0, float(dev_p[0]))
+        import_penalty = 0.3 * slack_import
+
+        # SoC readiness: penalise storage being near-empty or near-full.
+        des_soc = list(full_state["des_soc"]["MWh"].values())
+        storage_dev_ids = [
+            i for i, dev in enumerate(device_data.values())
+            if getattr(dev, 'dev_type', 0) == 3  # dev_type=3 means storage
+        ]
+        soc_penalty = 0.0
+        for idx, dev_id in enumerate(storage_dev_ids):
+            soc = des_soc[idx]
+            soc_max_mwh = self.simulator.devices[list(device_data.keys())[dev_id]].soc_max * base_mva
+            soc_ratio = soc / soc_max_mwh if soc_max_mwh > 0 else 0.0
+            # Parabola centered at 50%: penalises extremes (0% and 100%)
+            soc_penalty += -0.3 * (soc_ratio - 0.5) ** 2
 
         # Increment the year count.
         self.year_count = (self.date - self.date_init).days // 365
 
-        # make battery more active
-        des_soc = list(full_state["des_soc"]["MWh"].values())
-        for dev_id in storage_device_ids:
-            soc = des_soc[0]
-            soc_max = self.simulator.devices[dev_id].soc_max * self.simulator.baseMVA
-            soc_ratio = soc / soc_max if soc_max > 0 else 0.0
-            soc_readiness = -0.3 * (soc_ratio - 0.5) ** 2
-            r += soc_readiness
-
-        # setting penalty for wasting resources
-        r = r - curtailment_penalty + self_consumption_bonus
+        r = r - curtailment_penalty - import_penalty + soc_penalty
 
         return obs, r, terminated, truncated, info
 
@@ -234,19 +195,8 @@ class BCP_base(ANMEnv):
         self.date = date_init
 
     def _init_render(self, network_specs):
-        """
-        Initialize the rendering of the environment state.
-
-        Parameters
-        ----------
-        network_specs : dict of {str : list}
-            The operating characteristics of the electricity distribution network.
-        """
-
-        # Set visualization title to class name.
         title = type(self).__name__
 
-        # Convert dict of network specs into lists.
         dev_type = list(network_specs["dev_type"].values())
         ps, qs = [], []
         for i in network_specs["dev_p"].keys():
@@ -265,7 +215,6 @@ class BCP_base(ANMEnv):
         for i in network_specs["des_soc"].keys():
             soc_max.append(network_specs["des_soc"][i]["MWh"][1])
 
-        # Set default costs range if not specified.
         c1 = 100 if self.costs_clipping[0] is None else self.costs_clipping[0]
         c2 = 10000 if self.costs_clipping[1] is None else self.costs_clipping[1]
         costs_range = (c1, c2)
@@ -275,31 +224,6 @@ class BCP_base(ANMEnv):
         )
 
     def _update_render(self, dev_p, dev_q, branch_s, des_soc, gen_p_max, bus_v_magn, costs, network_collapsed):
-        """
-        Update the rendering of the environment state.
-
-        Parameters
-        ----------
-        dev_p  : list of float
-            The real power injection from each device (MW).
-        dev_q : list of float
-            The reactive power injection from each device (MW).
-        branch_s : list of float
-            The apparent power flow in each branch (MVA).
-        des_soc : list of float
-            The state of charge of each storage unit (MWh).
-        gen_p_max : list of float
-            The potential real power generation of each RER generator before
-            curtailment (MW).
-        bus_v_magn : list of float
-            The voltage magnitude of each bus (pu).
-        costs : list of float
-            The total energy loss and the total penalty associated with operating
-            constraints violation.
-        network_collapsed : bool
-            True if no load flow solution is found (possibly infeasible); False
-            otherwise.
-        """
         rendering.update(
             self.ws_server.address,
             self.date,
@@ -315,10 +239,6 @@ class BCP_base(ANMEnv):
         )
 
     def close(self):
-        """
-        Close the rendering.
-        """
-        # Close the rendering if it is currently active
         if self.is_rendering:
             try:
                 rendering.close(self.http_server, self.ws_server)

@@ -145,6 +145,14 @@ class LagrangianWrapper(gym.Wrapper):
         # update lambda
         if (terminated or truncated) and self.lambda_lr > 0.0:
             self._update_lambda()
+        
+        info["lagrangian/lambda_v"] = float(self.lam[0])
+        info["lagrangian/lambda_p"] = float(self.lam[1])
+        info["lagrangian/lambda_q"] = float(self.lam[2])
+        info["lagrangian/penalty"] = penalty
+        info["lagrangian/cost_v"] = float(costs[0])
+        info["lagrangian/cost_p"] = float(costs[1])
+        info["lagrangian/cost_q"] = float(costs[2])
 
         return obs, modified_reward, terminated, truncated, info
 
