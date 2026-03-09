@@ -71,7 +71,7 @@ _device_rows = np.array(
         [0, 0, 0, None, 200, -200, 200, -200, None, None, None, None, None, None, None],  # slack
         [1, 2, -1, 0.2, 0, -10, None, None, None, None, None, None, None, None, None],  # load
         [2, 2, 2, None, 30, 0, 30, -30, 20, None, 15, -15, None, None, None], # solar
-        [3, 2, 3, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 50.0, 0.9],  # battery
+        [3, 2, 3, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0.0, 0.9],  # battery
     ],
     dtype=object 
 )

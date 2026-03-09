@@ -111,7 +111,7 @@ class BCP(BCP_base):
         for idx, dev_id in enumerate(storage_device_ids):
             soc_min = self.simulator.devices[dev_id].soc_min  # already in p.u.
             soc_max = self.simulator.devices[dev_id].soc_max  # already in p.u.
-            initial_soc = soc_min + 0.5 * (soc_max - soc_min)  # 50% SOC in p.u.
+            initial_soc_pu = soc_min + 0.5 * (soc_max - soc_min)  # 50% SOC in p.u.
             
             # Set the SoC in the simulator's state (convert p.u. to MWh for state)
             if hasattr(self.simulator, 'state') and 'des_soc' in self.simulator.state:
@@ -119,11 +119,11 @@ class BCP(BCP_base):
                 if len(des_soc_keys) > idx:
                     des_soc_key = des_soc_keys[idx]
                     # Convert from p.u. to MWh for the state dictionary
-                    initial_soc_mwh = initial_soc * self.simulator.baseMVA
+                    initial_soc_mwh = initial_soc_pu * self.simulator.baseMVA
                     self.simulator.state['des_soc']['MWh'][des_soc_key] = initial_soc_mwh
             
-            # Set the device SoC in p.u. (as expected by the device)
-            self.simulator.devices[dev_id].soc = initial_soc
+            # Set device SoC in p.u. (as expected by the device)
+            self.simulator.devices[dev_id].soc = initial_soc_pu
 
         return obs, info
 
