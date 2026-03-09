@@ -28,8 +28,9 @@ import torch
 from .hyperparameters import *
 from .callbacks import ProgressBarManager, EvalCallback
 from .utils import save_hyperparameters, parse_args, make_log_dirs  # REMOVED make_envs, added save_hyperparameters
-from .wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper
+from .wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper
 from .lambda_sync_callback import LambdaSyncCallback
+from .exploration_callbacks import BatteryExplorationCallback
 
 # Read command line arguments.
 args = parse_args()
@@ -99,6 +100,7 @@ set_random_seed(SEED)
 def make_train_env(rank: int = 0):
     def _init():
         env = gym.make(ENV_ID)
+        env = BatteryClipWrapper(env)  # Add battery clipping wrapper
         env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
         env = NormalizeActionWrapper(env)
         if USE_LAGRANGIAN:
@@ -113,6 +115,7 @@ def make_eval_env(rank: int = 0):
     """Factory that returns a single wrapped eval env (lambda not updated)."""
     def _init():
         env = gym.make(ENV_ID)
+        env = BatteryClipWrapper(env)  # Add battery clipping wrapper
         env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
         env = NormalizeActionWrapper(env) 
         # lambda_lr=0 disables dual updates during evaluation
@@ -171,9 +174,11 @@ if old_data is not None:
 
 if USE_LAGRANGIAN and N_ENVS > 1:
     sync_callback = LambdaSyncCallback(train_env, verbose=1)
-    callbacks = [eval_callback, sync_callback]
+    battery_callback = BatteryExplorationCallback(verbose=1, battery_reward_scale=0.1)
+    callbacks = [eval_callback, sync_callback, battery_callback]
 else:
-    callbacks = [eval_callback]
+    battery_callback = BatteryExplorationCallback(verbose=1, battery_reward_scale=0.1)
+    callbacks = [eval_callback, battery_callback]
 
 print("Creating model...")
 
@@ -213,13 +218,22 @@ if __name__ == "__main__":
         if USE_LAGRANGIAN:
             try:
                 lambdas = []
-                while True:
+                # Initialize with first environment and traverse wrappers
+                inner = train_env.envs[0]
+                while hasattr(inner, 'env'):
                     if isinstance(inner, LagrangianWrapper):
                         lambdas.append(inner.get_lambda())
                         break
-                    if not hasattr(inner, 'env'):
-                        break
                     inner = inner.env
+                
+                # Also check other environments for safety
+                for env in train_env.envs[1:]:
+                    inner = env
+                    while hasattr(inner, 'env'):
+                        if isinstance(inner, LagrangianWrapper):
+                            lambdas.append(inner.get_lambda())
+                            break
+                        inner = inner.env
 
                 if lambdas:
                     avg_lambda = np.mean(np.stack(lambdas, axis=0), axis=0)

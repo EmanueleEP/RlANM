@@ -127,6 +127,11 @@ class LagrangianWrapper(gym.Wrapper):
 
         # Defensive get in case constraint_costs is missing (e.g. on first step or env variants)
         costs = info.get("constraint_costs", np.zeros(self.n_constraints, dtype=np.float32))
+        
+        # Validate constraint costs have correct shape
+        costs = np.asarray(costs, dtype=np.float32)
+        if costs.shape != (self.n_constraints,):
+            costs = np.zeros(self.n_constraints, dtype=np.float32)
 
         # accumulate episode statistics
         self.episode_cost += costs
@@ -173,3 +178,57 @@ class LagrangianWrapper(gym.Wrapper):
             f"Gradient:   {gradient}\n"
             f"New lambda: {self.lam}\n"
         )
+
+
+class BatteryClipWrapper(gym.Wrapper):
+    """
+    Clips battery actions to respect physical power limits while allowing
+    the agent to request any action in the normalized action space.
+    
+    This wrapper ensures that battery charging/discharging actions are
+    within the device's physical limits (±50 MW for the BCP environment).
+    """
+    
+    def __init__(self, env):
+        super().__init__(env)
+        # Battery P setpoint is at action[2] in the BCP environment
+        # Action mapping: [RenewableGen_P, RenewableGen_Q, StorageUnit_P, StorageUnit_Q]
+        self.battery_action_idx = 2
+        self.battery_power_limit = 50.0  # MW (from network.py: PMAX = 50, PMIN = -50)
+        
+    def step(self, action):
+        # Get the base environment to access the simulator
+        base_env = self.env
+        while hasattr(base_env, 'env'):
+            base_env = base_env.env
+            
+        # Check if this is a battery action (action[2] affects device 3)
+        if len(action) > 2:
+            # Rescale action to get the raw values
+            if hasattr(self.env, 'rescale_action'):
+                raw_action = self.env.rescale_action(action)
+            else:
+                raw_action = action
+                
+            # Clip battery power to physical limits
+            if len(raw_action) > self.battery_action_idx:
+                battery_action = raw_action[self.battery_action_idx]
+                clipped_battery_action = np.clip(battery_action, -self.battery_power_limit, self.battery_power_limit)
+                raw_action[self.battery_action_idx] = clipped_battery_action
+                
+                # If we have a normalized wrapper, we need to use the clipped action
+                if hasattr(self.env, 'rescale_action'):
+                    # Step with the clipped raw action
+                    obs, reward, terminated, truncated, info = self.env.step(raw_action)
+                else:
+                    # Step with the clipped action directly
+                    obs, reward, terminated, truncated, info = self.env.step(raw_action)
+            else:
+                obs, reward, terminated, truncated, info = self.env.step(action)
+        else:
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            
+        return obs, reward, terminated, truncated, info
+    
+    def reset(self, seed=None, options=None):
+        return self.env.reset(seed=seed, options=options)

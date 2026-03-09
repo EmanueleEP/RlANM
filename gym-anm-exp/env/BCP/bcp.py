@@ -60,12 +60,13 @@ class BCP_base(ANMEnv):
                 return
 
             full_state = self.simulator.state
-            dev_p = list(full_state["dev_p"]["MW"].values())
-            dev_q = list(full_state["dev_q"]["MVAr"].values())
-            branch_s = list(full_state["branch_s"]["MVA"].values())
-            des_soc = list(full_state["des_soc"]["MWh"].values())
-            gen_p_max = list(full_state["gen_p_max"]["MW"].values())
-            bus_v_magn = list(full_state["bus_v_magn"]["pu"].values())
+            # Build lists ordered by IDs so renderer maps values to the correct devices/branches
+            dev_p = [full_state["dev_p"]["MW"].get(i, 0) for i in sorted(full_state["dev_p"]["MW"].keys())]
+            dev_q = [full_state["dev_q"]["MVAr"].get(i, 0) for i in sorted(full_state["dev_q"]["MVAr"].keys())]
+            branch_s = [full_state["branch_s"]["MVA"].get(i, 0) for i in sorted(full_state["branch_s"]["MVA"].keys())]
+            des_soc = [full_state["des_soc"]["MWh"].get(i, 0) for i in sorted(full_state["des_soc"]["MWh"].keys())]
+            gen_p_max = [full_state["gen_p_max"]["MW"].get(i, 0) for i in sorted(full_state["gen_p_max"]["MW"].keys())]
+            bus_v_magn = [full_state["bus_v_magn"]["pu"].get(i, 0) for i in sorted(full_state["bus_v_magn"]["pu"].keys())]
             costs = [self.e_loss, self.penalty]
             network_collapsed = not self.simulator.pfe_converged
 

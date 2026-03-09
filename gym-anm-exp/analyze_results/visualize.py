@@ -14,7 +14,7 @@ from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 from rl_agents.hyperparameters import ENV_ID, MAX_EVAL_EP_LENGTH  # ADDED MAX_EVAL_EP_LENGTH
 from rl_agents.utils import load_visualization_env
-from rl_agents.wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper
+from rl_agents.wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper
 
 from gym_anm.simulator.components import Generator, StorageUnit
 
@@ -206,6 +206,7 @@ def make_env(env_id, vec_env_path, wrappers=True):
     def _init():
         env = gym.make(env_id)
         if wrappers:
+            env = BatteryClipWrapper(env)  # Add battery clipping wrapper
             env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             # lambda_lr=0.0 → multiplier frozen during eval (intentional)
