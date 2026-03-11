@@ -12,6 +12,7 @@ os.makedirs('figures', exist_ok=True)
 agent_groups = [['sac'], ['ppo']]
 # Load training stats.
 eval_stats = {a: [] for a in [group[0] for group in agent_groups]}
+run_performance = {a: [] for a in [group[0] for group in agent_groups]}  # Track individual run performance
 for agent_group in agent_groups:
     agent = agent_group[0]
     agent_path = os.path.join(folder, agent)
@@ -74,6 +75,10 @@ for agent_group in agent_groups:
         d = np.stack([timesteps, results, discounted_results, ep_lengths])
         eval_stats[agent].append(d)
         
+        # Track individual run performance (best discounted return)
+        best_performance = np.max(discounted_results)
+        run_performance[agent].append((run, best_performance, d))
+        
 # Clean statistics.
 for agent, d in eval_stats.items():
     if len(d) == 0:
@@ -89,6 +94,12 @@ eval_stats = {k: v for k, v in eval_stats.items() if len(v) > 0}
 for agent, d in eval_stats.items():
     print(f"{agent}: timesteps range from {d[0, 0, 0]/1e6:.2f}M to {d[0, 0, -1]/1e6:.2f}M")
 
+# Print best run for each algorithm
+for agent in run_performance:
+    if run_performance[agent]:
+        best_run = max(run_performance[agent], key=lambda x: x[1])
+        print(f"Best {agent.upper()} run: {best_run[0]} with performance {best_run[1]:.2f}")
+
 
 # Plot discounted returns.
 fig, ax = plt.subplots(1, 1, figsize=FIGSIZE)
@@ -96,8 +107,24 @@ for agent, d in eval_stats.items():
     # Compute mean and std.
     mu, std = np.mean(d[:, 2, :], axis=0), np.std(d[:, 2, :], axis=0)
     x = (d[0, 0] / 1e6)
-    ax.plot(x, mu, label=agent.upper())
-    ax.fill_between(x, mu-std, mu+std, alpha=0.5)
+    ax.plot(x, mu, label=f'{agent.upper()} (mean)', linewidth=2)
+    ax.fill_between(x, mu-std, mu+std, alpha=0.3)
+    
+    # Plot individual runs, highlighting the best one
+    if run_performance[agent]:
+        best_run = max(run_performance[agent], key=lambda x: x[1])
+        best_run_data = best_run[2]
+        best_run_name = best_run[0]
+        
+        # Plot all individual runs with labels
+        for run_name, _, run_data in run_performance[agent]:
+            run_x = run_data[0, :] / 1e6  # Use all timesteps, not just first element
+            run_y = run_data[2, :]  # Discounted returns
+            alpha = 0.8 if run_name == best_run_name else 0.6
+            linewidth = 2 if run_name == best_run_name else 1
+            ax.plot(run_x, run_y, alpha=alpha, linewidth=linewidth,
+                   label=f'{agent.upper()} {run_name}')
+    
     # Compute best mean
     idx = np.argmax(mu)
     print(f'Best discounted return for {agent}: {mu[idx]} +/- {std[idx]}')
@@ -113,8 +140,25 @@ for agent, d in eval_stats.items():
     # Compute mean and std.
     mu, std = np.mean(d[:, 1, :], axis=0), np.std(d[:, 1, :], axis=0)
     x = (d[0, 0] / 1e6)
-    ax.plot(x, mu, label=agent.upper())
-    ax.fill_between(x, mu-std, mu+std, alpha=0.5)
+    ax.plot(x, mu, label=f'{agent.upper()} (mean)', linewidth=2)
+    ax.fill_between(x, mu-std, mu+std, alpha=0.3)
+    
+    # Plot individual runs, highlighting the best one
+    if run_performance[agent]:
+        best_run = max(run_performance[agent], key=lambda x: x[1])
+        best_run_data = best_run[2]
+        best_run_name = best_run[0]
+        
+        # Plot all individual runs in light gray
+        for run_name, _, run_data in run_performance[agent]:
+            run_x = run_data[0, :] / 1e6  # Use all timesteps, not just first element
+            run_y = run_data[1, :]  # Non-discounted returns
+            alpha = 0.8 if run_name == best_run_name else 0.6
+            linewidth = 2 if run_name == best_run_name else 1
+            ax.plot(run_x, run_y, alpha=alpha, linewidth=linewidth, 
+                   label=f'{agent.upper()} {run_name}')
+
+    
     # Compute best mean
     idx = np.argmax(mu)
     print(f'Best total return for {agent}: {mu[idx]} +/- {std[idx]}')

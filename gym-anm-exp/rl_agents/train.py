@@ -100,9 +100,9 @@ set_random_seed(SEED)
 def make_train_env(rank: int = 0):
     def _init():
         env = gym.make(ENV_ID)
-        env = BatteryClipWrapper(env)  # Add battery clipping wrapper
         env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
         env = NormalizeActionWrapper(env)
+        env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
         if USE_LAGRANGIAN:
             env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=LAMBDA_LR, lambda_init=lambda_init_value)
         env = Monitor(env, LOG_DIR)
@@ -115,9 +115,9 @@ def make_eval_env(rank: int = 0):
     """Factory that returns a single wrapped eval env (lambda not updated)."""
     def _init():
         env = gym.make(ENV_ID)
-        env = BatteryClipWrapper(env)  # Add battery clipping wrapper
         env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
-        env = NormalizeActionWrapper(env) 
+        env = NormalizeActionWrapper(env)
+        env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
         # lambda_lr=0 disables dual updates during evaluation
         if USE_LAGRANGIAN:
             env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=0.0, lambda_init=lambda_init_value)

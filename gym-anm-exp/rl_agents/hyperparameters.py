@@ -36,16 +36,16 @@ ENV_ID = "BCP-v0"
 
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
-TRAIN_STEPS = 2000
-MAX_TRAINING_EP_LENGTH = 5000
-EVAL_FREQ = 1000
-N_EVAL_EPISODES = 5
-MAX_EVAL_EP_LENGTH = 3000
+TRAIN_STEPS = 500000  # FIXED: Was 2000 (only 1-2 episodes), now 500K
+MAX_TRAINING_EP_LENGTH = 672  # FIXED: Was 5000 (52 weeks!), now 672 (7 days × 96 steps/day)
+EVAL_FREQ = 10000  # Evaluate every 10K steps
+N_EVAL_EPISODES = 10  # FIXED: Was 5, now 10 for better statistics
+MAX_EVAL_EP_LENGTH = 672  # Match training episode length
 
 # new parameter
 N_ENVS = 2  # number of parallel environments
 
-USE_LAGRANGIAN = True
+USE_LAGRANGIAN = True  # FIXED: Was False, now True to enforce constraints
 
 LOG_DIR = BASE_DIR + ENV_ID + '/'
 os.makedirs(LOG_DIR, exist_ok=True)

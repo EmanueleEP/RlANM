@@ -182,13 +182,12 @@ class LagrangianWrapper(gym.Wrapper):
 
 class BatteryClipWrapper(gym.Wrapper):
     """
-    Clips battery actions to respect physical power limits AND SOC constraints while allowing
-    the agent to request any action in the normalized action space.
-    
-    This wrapper ensures that battery charging/discharging actions are
-    within the device's physical limits (±50 MW) and respect SOC constraints.
+    Clips battery actions to respect physical power limits AND SOC constraints.
+
+    This wrapper is placed AFTER NormalizeActionWrapper, so it operates on [-1, 1] actions.
+    It rescales to environment space, clips battery power, then rescales back to [-1, 1].
     """
-    
+
     def __init__(self, env):
         super().__init__(env)
         # Battery P setpoint is at action[2] in the BCP environment
@@ -197,72 +196,70 @@ class BatteryClipWrapper(gym.Wrapper):
         self.battery_power_limit = 50.0  # MW (from network.py: PMAX = 50, PMIN = -50)
         self.battery_soc_max = 100.0  # MWh (from network.py: SOC_MAX = 100)
         self.battery_efficiency = 0.9  # from network.py: EFF = 0.9
-        self.delta_t = 1.0  # 1 hour timestep (default in gym-anm)
-        
+        self.delta_t = 0.25
+
     def step(self, action):
         # Get the base environment to access the simulator
         base_env = self.env
         while hasattr(base_env, 'env'):
             base_env = base_env.env
-            
-        # Check if this is a battery action (action[2] affects device 3)
-        if len(action) > 2:
-            # Rescale action to get the raw values
-            if hasattr(self.env, 'rescale_action'):
-                raw_action = self.env.rescale_action(action)
-            else:
-                raw_action = action
-                
-            # Get current battery SOC if available
-            current_soc = 0.0
-            if hasattr(base_env, 'simulator'):
-                full_state = base_env.simulator.state
-                des_soc = list(full_state["des_soc"]["MWh"].values())
-                if des_soc:
-                    current_soc = des_soc[0]  # First (and only) storage device
-                
-            # Clip battery power to physical limits AND SOC constraints
-            if len(raw_action) > self.battery_action_idx:
-                battery_action = raw_action[self.battery_action_idx]
-                
-                # Apply power limits first
-                clipped_battery_action = np.clip(battery_action, -self.battery_power_limit, self.battery_power_limit)
-                
-                # Apply SOC constraints
-                if clipped_battery_action > 0:  # Charging
-                    # Check if battery is full
-                    max_charge_power = (self.battery_soc_max - current_soc) / self.delta_t
-                    max_charge_power = min(max_charge_power, self.battery_power_limit)
-                    clipped_battery_action = min(clipped_battery_action, max_charge_power)
-                    
-                elif clipped_battery_action < 0:  # Discharging
-                    # Check if battery is empty - allow some minimum SOC for discharge
-                    if current_soc <= 0.1:  # Allow small discharge even when nearly empty
-                        max_discharge_power = 0.1 / (self.delta_t * self.battery_efficiency)
-                    else:
-                        max_discharge_power = current_soc / (self.delta_t * self.battery_efficiency)
-                    max_discharge_power = min(max_discharge_power, self.battery_power_limit)
-                    clipped_battery_action = max(clipped_battery_action, -max_discharge_power)
-                
-                raw_action[self.battery_action_idx] = clipped_battery_action
-                
-                # Debug output for monitoring - always show for first few steps
-                if abs(battery_action - clipped_battery_action) > 0.01 or current_soc < 1.0:
-                    print(f"Battery: {battery_action:.3f} -> {clipped_battery_action:.3f} MW (SOC: {current_soc:.3f}/{self.battery_soc_max:.1f} MWh)")
-                
-                # If we have a normalized wrapper, we need to use the clipped action
-                if hasattr(self.env, 'rescale_action'):
-                    # Step with the clipped raw action
-                    obs, reward, terminated, truncated, info = self.env.step(raw_action)
-                else:
-                    # Step with the clipped action directly
-                    obs, reward, terminated, truncated, info = self.env.step(raw_action)
-            else:
-                obs, reward, terminated, truncated, info = self.env.step(action)
+
+        # Make a copy so we don't modify the original
+        action = np.array(action, dtype=np.float32)
+
+        # Rescale action from [-1, 1] to environment space
+        if hasattr(self.env, 'rescale_action'):
+            raw_action = np.array(self.env.rescale_action(action), dtype=np.float32)
         else:
-            obs, reward, terminated, truncated, info = self.env.step(action)
-            
+            raw_action = action.copy()
+
+        # Get current battery SOC if available
+        current_soc = 0.0
+        if hasattr(base_env, 'simulator') and base_env.simulator.state is not None:
+            full_state = base_env.simulator.state
+            des_soc = list(full_state["des_soc"]["MWh"].values())
+            if des_soc:
+                current_soc = des_soc[0]  # First (and only) storage device
+
+        # Clip battery power to physical limits AND SOC constraints
+        if len(raw_action) > self.battery_action_idx:
+            battery_action = raw_action[self.battery_action_idx]
+            clipped_battery_action = battery_action
+
+            # Apply power limits first
+            clipped_battery_action = np.clip(clipped_battery_action, -self.battery_power_limit, self.battery_power_limit)
+
+            # Apply SOC constraints
+            if clipped_battery_action > 0:  # Discharging (positive = grid injection)
+                # Calculate maximum possible discharge power
+                if current_soc <= 0.1:
+                    max_discharge_power = 0.1 / self.delta_t / self.battery_efficiency
+                else:
+                    max_discharge_power = current_soc / self.delta_t / self.battery_efficiency
+                max_discharge_power = min(max_discharge_power, self.battery_power_limit)
+                clipped_battery_action = min(clipped_battery_action, max_discharge_power)
+
+            elif clipped_battery_action < 0:  # Charging (negative = consuming from grid)
+                # Calculate maximum energy available for charging
+                max_energy_add = self.battery_soc_max - current_soc
+                max_charge_power = min(max_energy_add / self.delta_t / self.battery_efficiency, self.battery_power_limit)
+                clipped_battery_action = max(clipped_battery_action, -max_charge_power)
+
+            raw_action[self.battery_action_idx] = clipped_battery_action
+
+        # Reverse-rescale from environment space back to [-1, 1]
+        # Formula: action_normalized = 2 * (action_raw - low) / (high - low) - 1
+        if hasattr(self.env, 'low') and hasattr(self.env, 'high'):
+            low = self.env.low
+            high = self.env.high
+            clipped_action = 2 * (raw_action - low) / (high - low) - 1
+            clipped_action = np.clip(clipped_action, -1, 1)
+        else:
+            clipped_action = raw_action
+
+        # Pass the clipped action to the next wrapper
+        obs, reward, terminated, truncated, info = self.env.step(clipped_action)
         return obs, reward, terminated, truncated, info
-    
+
     def reset(self, seed=None, options=None):
         return self.env.reset(seed=seed, options=options)

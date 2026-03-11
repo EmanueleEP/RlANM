@@ -150,12 +150,23 @@ class BCP_base(ANMEnv):
         slack_import = max(0.0, float(dev_p[0]))
         import_penalty = 0.3 * slack_import
 
-        # SoC readiness: penalise storage being near-empty or near-full.
+        # Get storage device IDs (needed for both battery reward and SOC penalty)
         des_soc = list(full_state["des_soc"]["MWh"].values())
         storage_dev_ids = [
             i for i, dev in enumerate(device_data.values())
             if getattr(dev, 'dev_type', 0) == 3  # dev_type=3 means storage
         ]
+
+        # Reward battery usage (both charging and discharging promote active management)
+        battery_reward = 0.0
+        for dev_id in storage_dev_ids:
+            battery_power = float(dev_p[dev_id])
+            # FIXED: Was asymmetric (only discharge). Now symmetric reward for any activity.
+            # Positive P = discharge (grid injection, reduce slack import)
+            # Negative P = charge (store renewable, reduce curtailment)
+            battery_reward += 0.3 * abs(battery_power)  # Reward active battery management
+
+        # SoC readiness: penalise storage being near-empty or near-full.
         soc_penalty = 0.0
         for idx, dev_id in enumerate(storage_dev_ids):
             soc = des_soc[idx]
@@ -167,7 +178,7 @@ class BCP_base(ANMEnv):
         # Increment the year count.
         self.year_count = (self.date - self.date_init).days // 365
 
-        r = r - curtailment_penalty - import_penalty + soc_penalty
+        r = r - curtailment_penalty - import_penalty + battery_reward + soc_penalty
 
         return obs, r, terminated, truncated, info
 

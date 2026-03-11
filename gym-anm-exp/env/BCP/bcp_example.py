@@ -23,6 +23,10 @@ class BCP(BCP_base):
         # Consumption and maximum generation 24-hour time series.
         self.P_loads = _get_load_time_series(0.1, 123)
         self.P_maxs = _get_gen_time_series(0.5, 123)
+        
+        # Initial battery SoC configuration (in MWh)
+        # This could be made configurable or read from a config file
+        self.initial_battery_soc_mwh = 1.0
 
         # # load from file
         # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)
@@ -66,14 +70,22 @@ class BCP(BCP_base):
         # --- Energy storage unit ---
         storage_device_ids = [3]
         for idx, dev_id in enumerate(storage_device_ids):
-            # Start battery at 50% SOC instead of random minimum
-            soc_min = self.simulator.devices[dev_id].soc_min  # already in p.u.
-            soc_max = self.simulator.devices[dev_id].soc_max  # already in p.u.
-            initial_soc = soc_min + 0.5 * (soc_max - soc_min)  # 50% SOC in p.u.
-            state[2 * n_dev + idx] = initial_soc  # store SoC in p.u. in state vector
+            # Use configured initial SoC (in MWh)
+            initial_soc_mwh = self.initial_battery_soc_mwh
+            
+            # Convert to per unit for internal state
+            soc_max_mwh = self.simulator.devices[dev_id].soc_max * self.simulator.baseMVA
+            initial_soc_pu = initial_soc_mwh / soc_max_mwh if soc_max_mwh > 0 else 0.0
+            
+            # Validate SoC is within bounds
+            soc_min = self.simulator.devices[dev_id].soc_min
+            soc_max = self.simulator.devices[dev_id].soc_max
+            initial_soc_pu = np.clip(initial_soc_pu, soc_min, soc_max)
+            
+            state[2 * n_dev + idx] = initial_soc_pu  # store SoC in p.u. in state vector
             
             # IMPORTANT: Also set the initial SoC in the simulator device
-            self.simulator.devices[dev_id].soc = initial_soc  # p.u. as expected by device
+            self.simulator.devices[dev_id].soc = initial_soc_pu  # p.u. as expected by device
 
         return state
 
@@ -106,20 +118,27 @@ class BCP(BCP_base):
         super().reset_date(new_date)
         
         # IMPORTANT: Initialize battery SoC in the simulator state
-        # The battery should start at 50% SoC
+        # Use configured initial SoC
         storage_device_ids = [3]
         for idx, dev_id in enumerate(storage_device_ids):
-            soc_min = self.simulator.devices[dev_id].soc_min  # already in p.u.
-            soc_max = self.simulator.devices[dev_id].soc_max  # already in p.u.
-            initial_soc_pu = soc_min + 0.5 * (soc_max - soc_min)  # 50% SOC in p.u.
+            # Use configured initial SoC (in MWh)
+            initial_soc_mwh = self.initial_battery_soc_mwh
             
-            # Set the SoC in the simulator's state (convert p.u. to MWh for state)
+            # Convert to per unit for internal consistency
+            soc_max_mwh = self.simulator.devices[dev_id].soc_max * self.simulator.baseMVA
+            initial_soc_pu = initial_soc_mwh / soc_max_mwh if soc_max_mwh > 0 else 0.0
+            
+            # Validate SoC is within bounds
+            soc_min = self.simulator.devices[dev_id].soc_min
+            soc_max = self.simulator.devices[dev_id].soc_max
+            initial_soc_pu = np.clip(initial_soc_pu, soc_min, soc_max)
+            
+            # Set the SoC in the simulator's state (use MWh value directly)
             if hasattr(self.simulator, 'state') and 'des_soc' in self.simulator.state:
                 des_soc_keys = list(self.simulator.state['des_soc']['MWh'].keys())
                 if len(des_soc_keys) > idx:
                     des_soc_key = des_soc_keys[idx]
-                    # Convert from p.u. to MWh for the state dictionary
-                    initial_soc_mwh = initial_soc_pu * self.simulator.baseMVA
+                    # Use the MWh value directly from configuration
                     self.simulator.state['des_soc']['MWh'][des_soc_key] = initial_soc_mwh
             
             # Set device SoC in p.u. (as expected by the device)

@@ -16,7 +16,37 @@ from rl_agents.hyperparameters import ENV_ID, MAX_EVAL_EP_LENGTH  # ADDED MAX_EV
 from rl_agents.utils import load_visualization_env
 from rl_agents.wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper
 
+import tty, termios
+
 from gym_anm.simulator.components import Generator, StorageUnit
+
+def wait_for_keypress(step_mode):
+    """
+    In step mode: aspetta che l'utente prema un tasto.
+      INVIO / SPAZIO → step successivo
+      'q'            → interrompe la visualizzazione
+      'r'            → reset episodio
+    In auto mode: non fa nulla (usa sleep come prima).
+    Ritorna True per continuare, False per uscire.
+    """
+    if not step_mode:
+        return True
+
+    print("\n[STEP MODE] Premi INVIO/SPAZIO=avanti | q=esci | r=reset", end="", flush=True)
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+    print()  
+
+    if ch in ('q', 'Q', '\x03'): 
+        return False
+    return ch  
 
 
 def get_anm_env(env):
@@ -192,7 +222,6 @@ def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=
 
     print(f"\nREWARD: {reward:.4f}")
     print(f"DONE: {done}")
-    print(f"INFO: {info}")
 
 
 def make_env(env_id, vec_env_path, wrappers=True):
@@ -206,7 +235,7 @@ def make_env(env_id, vec_env_path, wrappers=True):
     def _init():
         env = gym.make(env_id)
         if wrappers:
-            env = BatteryClipWrapper(env)  # Add battery clipping wrapper
+            # env = BatteryClipWrapper(env)  # Temporarily disabled for debugging
             env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             # lambda_lr=0.0 → multiplier frozen during eval (intentional)
@@ -216,7 +245,7 @@ def make_env(env_id, vec_env_path, wrappers=True):
     return DummyVecEnv([_init])
 
 
-def visualize(path, algo, T, sleep_time, print_steps):
+def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=False):
     """Visualize a trained agent."""
 
     # --- Load model ---
@@ -254,7 +283,7 @@ def visualize(path, algo, T, sleep_time, print_steps):
     print()
     print("IMPORTANT: gym-anm environments render in a BROWSER")
     print("Running on http://127.0.0.1:8050/")
-    time.sleep(3)
+    time.sleep(1)
 
     # --- Reset: Gymnasium returns (obs, info) ---
     reset_result = env.reset()
@@ -282,7 +311,19 @@ def visualize(path, algo, T, sleep_time, print_steps):
 
             print_step_info(i + 1, action[0], obs[0], rewards[0], dones[0], info, anm_env, action_time)
             anm_env.render()
-            time.sleep(sleep_time)
+            
+            if step_mode:
+                key = wait_for_keypress(step_mode=True)
+                if key is False:
+                    break
+                if key == 'r':
+                    print("\nReset forzato dall'utente.")
+                    reset_result = env.reset()
+                    obs = reset_result[0] if isinstance(reset_result, tuple) else reset_result
+                    state = None
+                    continue
+            else:
+                time.sleep(sleep_time)
 
             if dones[0]:
                 print(f"\nEpisode finished at step {i + 1}")
@@ -302,7 +343,8 @@ def visualize(path, algo, T, sleep_time, print_steps):
         std_t = (sum((t - mean_t) ** 2 for t in action_times) / len(action_times)) ** 0.5
         print("\nACTION DECISION TIME STATISTICS")
         print(f"Total steps: {len(action_times)}")
-        print(f"Mean time:   {mean_t * 1000:.2f} ms")
+        if not no_mean:
+            print(f"Mean time:   {mean_t * 1000:.2f} ms")
         print(f"Min time:    {min(action_times) * 1000:.2f} ms")
         print(f"Max time:    {max(action_times) * 1000:.2f} ms")
         print(f"Std dev:     {std_t * 1000:.2f} ms")
@@ -322,7 +364,10 @@ def print_obs(obs, anm_env):
 
     print("\nAGENT OBSERVATION:")
     print(f"  Shape: {obs.shape}")
-    print(f"  Min: {obs_flat.min():.4f}, Max: {obs_flat.max():.4f}, Mean: {obs_flat.mean():.4f}\n")
+    if no_mean:
+        print(f"  Min: {obs_flat.min():.4f}, Max: {obs_flat.max():.4f}\n")
+    else:
+        print(f"  Min: {obs_flat.min():.4f}, Max: {obs_flat.max():.4f}, Mean: {obs_flat.mean():.4f}\n")
 
     print("Bus Voltages (p.u. deviation from 1.0):")
     for i, bus_id in enumerate(sim.buses.keys()):
@@ -357,6 +402,8 @@ def parse_args():
     parser.add_argument("--sleep", '-s', type=float, default=0.5, help='Sleep time between steps')
     parser.add_argument("-T", type=int, default=int(1e4), help='Number of timesteps to render')
     parser.add_argument("--print-steps", action="store_true", help="Print step info to console (always saved to log)")
+    parser.add_argument("--no-mean", action="store_true", help="Hide mean values from output")
+    parser.add_argument("--step-by-step", action="store_true", help="Step-by-step simulation")
 
     return parser.parse_args()
 
@@ -371,5 +418,5 @@ if __name__ == '__main__':
     else:
         raise ValueError('Unimplemented agent ' + args.agent)
 
-    visualize(args.path, ALGO, args.T, args.sleep, args.print_steps)
+    visualize(args.path, ALGO, args.T, args.sleep, args.print_steps, args.no_mean, args.step_by_step)
     print('Done.')
