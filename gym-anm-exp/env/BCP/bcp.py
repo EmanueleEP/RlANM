@@ -157,14 +157,14 @@ class BCP_base(ANMEnv):
             if getattr(dev, 'dev_type', 0) == 3  # dev_type=3 means storage
         ]
 
-        # Reward battery usage (both charging and discharging promote active management)
+        # Reward battery usage: asymmetric to incentivize charging renewable energy
         battery_reward = 0.0
         for dev_id in storage_dev_ids:
             battery_power = float(dev_p[dev_id])
-            # FIXED: Was asymmetric (only discharge). Now symmetric reward for any activity.
-            # Positive P = discharge (grid injection, reduce slack import)
-            # Negative P = charge (store renewable, reduce curtailment)
-            battery_reward += 0.3 * abs(battery_power)  # Reward active battery management
+            if battery_power < 0:  # Charging (negative P = storing energy)
+                battery_reward += 0.6 * abs(battery_power)
+            else:  # Discharging (positive P = grid injection)
+                battery_reward += 0.4 * abs(battery_power)
 
         # SoC readiness: penalise storage being near-empty or near-full.
         soc_penalty = 0.0
