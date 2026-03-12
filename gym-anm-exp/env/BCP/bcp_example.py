@@ -26,7 +26,7 @@ class BCP(BCP_base):
         
         # Initial battery SoC configuration (in MWh)
         # This could be made configurable or read from a config file
-        self.initial_battery_soc_mwh = 1.0
+        self.initial_battery_soc_mwh = 50.0  # 50% of 100 MWh capacity
 
         # # load from file
         # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)

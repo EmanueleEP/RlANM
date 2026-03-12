@@ -157,14 +157,24 @@ class BCP_base(ANMEnv):
             if getattr(dev, 'dev_type', 0) == 3  # dev_type=3 means storage
         ]
 
-        # Reward battery usage: asymmetric to incentivize charging renewable energy
+        # Get renewable generation (device 2 is solar/renewable)
+        renewable_power = float(dev_p[2]) if len(dev_p) > 2 else 0.0
+
+        # Reward battery usage: prioritize charging renewable, incentivize discharge
         battery_reward = 0.0
         for dev_id in storage_dev_ids:
             battery_power = float(dev_p[dev_id])
             if battery_power < 0:  # Charging (negative P = storing energy)
-                battery_reward += 0.6 * abs(battery_power)
+                if renewable_power > 0:
+                    # High reward for charging with renewable energy (store for later use)
+                    renewable_ratio = min(1.0, abs(battery_power) / max(renewable_power, 0.1))
+                    battery_reward += 0.8 * abs(battery_power) * renewable_ratio
+                else:
+                    # Lower reward for charging from grid (but allow it for flexibility)
+                    battery_reward += 0.2 * abs(battery_power)
             else:  # Discharging (positive P = grid injection)
-                battery_reward += 0.4 * abs(battery_power)
+                # Discharge is valuable: reduces import and provides energy
+                battery_reward += 0.6 * abs(battery_power)
 
         # SoC readiness: penalise storage being near-empty or near-full.
         soc_penalty = 0.0
