@@ -148,33 +148,50 @@ class BCP_base(ANMEnv):
         # Penalise importing power from the slack bus (grid dependency).
         #    Slack is always device 0. Positive dev_p[0] means importing from grid.
         slack_import = max(0.0, float(dev_p[0]))
-        import_penalty = 0.3 * slack_import
 
         # Get storage device IDs (needed for both battery reward and SOC penalty)
         des_soc = list(full_state["des_soc"]["MWh"].values())
+
+        # Find storage devices by class name (StorageUnit)
         storage_dev_ids = [
             i for i, dev in enumerate(device_data.values())
-            if getattr(dev, 'dev_type', 0) == 3  # dev_type=3 means storage
+            if type(dev).__name__ == 'StorageUnit'
         ]
 
-        # Get renewable generation (device 2 is solar/renewable)
-        renewable_power = float(dev_p[2]) if len(dev_p) > 2 else 0.0
-
-        # Reward battery usage: prioritize charging renewable, incentivize discharge
-        battery_reward = 0.0
+        # Calculate battery charging power (if any)
+        battery_charging = 0.0
         for dev_id in storage_dev_ids:
             battery_power = float(dev_p[dev_id])
+            if battery_power < 0:  # Charging (negative P)
+                battery_charging += abs(battery_power)
+
+        # Reduce import penalty for battery charging (it's energy storage, not consumption)
+        # Only penalize the remaining import (load consumption + grid losses)
+        import_penalty = 0.3 * max(0, slack_import - battery_charging)
+
+        # Reward battery usage: incentivize USEFUL cycling, not wasteful discharge
+        battery_reward = 0.0
+
+        # Get renewable generation to check if it's abundant
+        renewable_power = float(dev_p[2]) if len(dev_p) > 2 else 0.0
+        load_power = abs(float(dev_p[1])) if len(dev_p) > 1 else 0.0
+
+        for dev_id in storage_dev_ids:
+            battery_power = float(dev_p[dev_id])
+
             if battery_power < 0:  # Charging (negative P = storing energy)
-                if renewable_power > 0:
-                    # High reward for charging with renewable energy (store for later use)
-                    renewable_ratio = min(1.0, abs(battery_power) / max(renewable_power, 0.1))
-                    battery_reward += 0.8 * abs(battery_power) * renewable_ratio
-                else:
-                    # Lower reward for charging from grid (but allow it for flexibility)
-                    battery_reward += 0.2 * abs(battery_power)
+                # Incentivize charging especially during high renewable times
+                battery_reward += 5.0 * abs(battery_power)
+
             else:  # Discharging (positive P = grid injection)
-                # Discharge is valuable: reduces import and provides energy
-                battery_reward += 0.6 * abs(battery_power)
+                # Only reward discharge if renewable is LOW (less than load)
+                # This prevents wasteful discharge when renewable is abundant
+                if renewable_power < load_power:
+                    # Good: discharging when renewable is low → +1.0
+                    battery_reward += 1.0 * abs(battery_power)
+                else:
+                    # Bad: discharging when renewable is high → -0.3 (penalize!)
+                    battery_reward -= 0.3 * abs(battery_power)
 
         # SoC readiness: penalise storage being near-empty or near-full.
         soc_penalty = 0.0
@@ -188,6 +205,7 @@ class BCP_base(ANMEnv):
         # Increment the year count.
         self.year_count = (self.date - self.date_init).days // 365
 
+        r_base = r  # Save base reward before modifications
         r = r - curtailment_penalty - import_penalty + battery_reward + soc_penalty
 
         return obs, r, terminated, truncated, info
