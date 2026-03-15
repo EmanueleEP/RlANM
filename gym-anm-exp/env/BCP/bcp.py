@@ -11,26 +11,10 @@ from .utils import random_date
 
 
 class BCP_base(ANMEnv):
-    """
-
-    The structure of the electricity distribution network used for this
-    environment is shown below:
-
-    Slack ---
-            |
-         -----------------
-         |         |     | 
-        battery   Load   PV
-
-    """
-
     metadata = {"render_modes": ["human"]}
 
     def __init__(self, observation, K, delta_t, gamma, lamb, aux_bounds=None, costs_clipping=(None, None), seed=None):
-
         super().__init__(network, observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping, seed)
-
-        # Rendering variables.
         self.network_specs = self.simulator.get_rendering_specs()
         self.timestep_length = dt.timedelta(minutes=int(60 * delta_t))
         self.date = None
@@ -44,23 +28,18 @@ class BCP_base(ANMEnv):
         if self.render_mode is None:
             if mode not in ["human"]:
                 raise NotImplementedError()
-
             self.render_mode = mode
             self.skipped_frames = 0
             rendered_network_specs = ["dev_type", "dev_p", "dev_q", "branch_s", "bus_v", "des_soc"]
             specs = {s: self.network_specs[s] for s in rendered_network_specs}
             self._init_render(specs)
-
             self.render(mode=mode, skip_frames=skip_frames)
             self.is_rendering = True
-
         else:
             self.skipped_frames = (self.skipped_frames + 1) % (skip_frames + 1)
             if self.skipped_frames:
                 return
-
             full_state = self.simulator.state
-            # Build lists ordered by IDs so renderer maps values to the correct devices/branches
             dev_p = [full_state["dev_p"]["MW"].get(i, 0) for i in sorted(full_state["dev_p"]["MW"].keys())]
             dev_q = [full_state["dev_q"]["MVAr"].get(i, 0) for i in sorted(full_state["dev_q"]["MVAr"].keys())]
             branch_s = [full_state["branch_s"]["MVA"].get(i, 0) for i in sorted(full_state["branch_s"]["MVA"].keys())]
@@ -69,7 +48,6 @@ class BCP_base(ANMEnv):
             bus_v_magn = [full_state["bus_v_magn"]["pu"].get(i, 0) for i in sorted(full_state["bus_v_magn"]["pu"].keys())]
             costs = [self.e_loss, self.penalty]
             network_collapsed = not self.simulator.pfe_converged
-
             self._update_render(dev_p, dev_q, branch_s, des_soc, gen_p_max, bus_v_magn, costs, network_collapsed)
 
     def safe_array(self, x):
@@ -78,28 +56,28 @@ class BCP_base(ANMEnv):
     def step(self, action):
         obs, r, terminated, truncated, info = super().step(action)
 
-        # Increment the date for rendering
         self.date += self.timestep_length
 
-        # Extract state
         full_state = self.simulator.state
-        gen_p_max = np.array(list(full_state["gen_p_max"]["MW"].values()))
-        dev_p = np.array(list(full_state["dev_p"]["MW"].values()))
-        dev_q = np.array(list(full_state["dev_q"]["MVAr"].values()))
 
         device_data = self.simulator.devices
         base_mva = self.simulator.baseMVA
 
+        device_ids = sorted(device_data.keys())
+        dev_p = np.array([full_state["dev_p"]["MW"].get(i, 0.0) for i in device_ids], dtype=np.float32)
+        dev_q = np.array([full_state["dev_q"]["MVAr"].get(i, 0.0) for i in device_ids], dtype=np.float32)
+        gen_ids = sorted(full_state.get("gen_p_max", {}).get("MW", {}).keys())
+        gen_p_max = np.array([full_state["gen_p_max"]["MW"].get(i, 0.0) for i in gen_ids], dtype=np.float32)
+
         device_type = np.array(
-            [getattr(dev, 'dev_type', 1) for dev in device_data.values()], dtype=np.int32
+            [getattr(device_data[i], "dev_type", 1) for i in device_ids], dtype=np.int32
         )
 
-        p_max = np.array([dev.p_max for dev in device_data.values()], dtype=np.float32) * base_mva
-        p_min = np.array([dev.p_min for dev in device_data.values()], dtype=np.float32) * base_mva
-        q_max = np.array([dev.q_max for dev in device_data.values()], dtype=np.float32) * base_mva
-        q_min = np.array([dev.q_min for dev in device_data.values()], dtype=np.float32) * base_mva
+        p_max = np.array([device_data[i].p_max for i in device_ids], dtype=np.float32) * base_mva
+        p_min = np.array([device_data[i].p_min for i in device_ids], dtype=np.float32) * base_mva
+        q_max = np.array([device_data[i].q_max for i in device_ids], dtype=np.float32) * base_mva
+        q_min = np.array([device_data[i].q_min for i in device_ids], dtype=np.float32) * base_mva
 
-        # Constraint violations for Lagrangian
         p_violation = np.zeros_like(dev_p)
         q_violation = np.zeros_like(dev_q)
 
@@ -119,8 +97,9 @@ class BCP_base(ANMEnv):
             if not np.isnan(q_min[i]):
                 q_violation[i] += max(0, q_min[i] - dev_q[i])
 
-        bus_v = np.array(list(full_state["bus_v_magn"]["pu"].values()))
-        bus_objects = list(self.simulator.buses.values())
+        bus_ids = sorted(self.simulator.buses.keys())
+        bus_v = np.array([full_state["bus_v_magn"]["pu"].get(i, 1.0) for i in bus_ids], dtype=float)
+        bus_objects = [self.simulator.buses[i] for i in bus_ids]
         v_max = np.array([getattr(b, 'v_max', 1.1) for b in bus_objects], dtype=float)
         v_min = np.array([getattr(b, 'v_min', 0.9) for b in bus_objects], dtype=float)
         v_violation = np.maximum(0, bus_v - v_max) + np.maximum(0, v_min - bus_v)
@@ -131,112 +110,97 @@ class BCP_base(ANMEnv):
             np.mean(q_violation) / base_mva,
         ], dtype=np.float32)
 
-        # General reward shaping
 
-        # Penalise curtailment of ANY local generator (wasted local energy).
-        #    gen_p_max has one entry per generator; dev_p is indexed over all devices.
-        gen_dev_ids = [
-            i for i, dev in enumerate(device_data.values())
-            if getattr(dev, 'dev_type', 0) == 2  # dev_type=2 means non-controllable generator
-        ]
-        if len(gen_dev_ids) > 0:
-            curtailment = np.maximum(0, gen_p_max - dev_p[gen_dev_ids])
-        else:
-            curtailment = np.zeros(1)
-        curtailment_penalty = 0.5 * np.sum(curtailment)
+        # objective:
+        #   - minimize renewable curtailment (energy not used/stored/exported)
+        #   - minimize reliance on the slack generator (imports from slack)
 
-        # Penalise importing power from the slack bus (grid dependency).
-        #    Slack is always device 0. Positive dev_p[0] means importing from grid.
-        slack_import = max(0.0, float(dev_p[0]))
+        delta_t_h = float(getattr(self, "delta_t", 0.25))
+        slack_p = float(full_state["dev_p"]["MW"].get(0, 0.0))
+        
+        # Slack penalty choice:
+        # - Imports-only (penalize relying on slack as supplier): max(0, slack_p)
+        # - Abs (penalize any interaction with slack, import or export): abs(slack_p)
+        # slack_import_mw = max(0.0, slack_p)
+        slack_import_mw = abs(slack_p)
 
-        # Get storage device IDs (needed for both battery reward and SOC penalty)
-        des_soc = list(full_state["des_soc"]["MWh"].values())
+        # Curtailment derived from potential renewable generation (gen_p_max) vs actual injection (dev_p).
+        # Only sum devices with DEV_TYPE == 2 (wind/solar).
+        renewable_ids = [i for i in device_ids if getattr(device_data[i], "dev_type", None) == 2]
+        curtailment_mw = 0.0
+        gen_p_max_dict = full_state.get("gen_p_max", {}).get("MW", {})
+        dev_p_dict = full_state.get("dev_p", {}).get("MW", {})
+        for dev_id in renewable_ids:
+            if dev_id not in gen_p_max_dict:
+                continue
+            p_potential = float(gen_p_max_dict.get(dev_id, 0.0))
+            p_actual = float(dev_p_dict.get(dev_id, 0.0))
+            curtailment_mw += max(0.0, p_potential - p_actual)
 
-        # Find storage devices by class name (StorageUnit)
-        storage_dev_ids = [
-            i for i, dev in enumerate(device_data.values())
-            if type(dev).__name__ == 'StorageUnit'
-        ]
+        # Optional: tiny cycling penalty to prevent pointless oscillations.
+        battery_p = float(dev_p_dict.get(3, 0.0))
+        battery_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(3, 0.0))
 
-        # Calculate battery charging power (if any)
-        battery_charging = 0.0
-        for dev_id in storage_dev_ids:
-            battery_power = float(dev_p[dev_id])
-            if battery_power < 0:  # Charging (negative P)
-                battery_charging += abs(battery_power)
+        # Weights are in "reward per MWh".
+        W_CURTAIL = 1.0
+        W_SLACK_IMPORT = 1.0
+        W_CYCLE = 0.01
+        W_SOC_RESERVE = 2.0
+        # start penalizing when battery SoC is below the following MWh to encourage maintaining a reserve for reliability
+        SOC_RESERVE_MWH = 5.0
+        W_SOC_CEILING = 2.0
+        # start penalizing when battery SoC is above the following MWh to discourage hoarding / near-full saturation
+        SOC_CEILING_MWH = 90.0
 
-        # Reduce import penalty for battery charging (it's energy storage, not consumption)
-        # Only penalize the remaining import (load consumption + grid losses)
-        import_penalty = 0.3 * max(0, slack_import - battery_charging)
+        curtailment_mwh = curtailment_mw * delta_t_h
+        slack_import_mwh = slack_import_mw * delta_t_h
+        cycle_mwh = abs(battery_p) * delta_t_h
+        soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh)
+        soc_ceiling_excess_mwh = max(0.0, battery_soc_mwh - SOC_CEILING_MWH)
 
-        # Reward battery usage: incentivize USEFUL cycling, not wasteful discharge
-        battery_reward = 0.0
+        r = r - (
+            W_CURTAIL * curtailment_mwh
+            + W_SLACK_IMPORT * slack_import_mwh
+            + W_CYCLE * cycle_mwh
+            + W_SOC_RESERVE * soc_reserve_shortfall_mwh
+            + W_SOC_CEILING * soc_ceiling_excess_mwh
+        )
 
-        # Get renewable generation to check if it's abundant
-        renewable_power = float(dev_p[2]) if len(dev_p) > 2 else 0.0
-        load_power = abs(float(dev_p[1])) if len(dev_p) > 1 else 0.0
+        info["objective_costs"] = np.array(
+            [curtailment_mwh, slack_import_mwh, cycle_mwh, soc_reserve_shortfall_mwh, soc_ceiling_excess_mwh],
+            dtype=np.float32,
+        )
+        info["objective/cost_curtailment_mwh"] = float(curtailment_mwh)
+        info["objective/cost_slack_import_mwh"] = float(slack_import_mwh)
+        info["objective/cost_cycle_mwh"] = float(cycle_mwh)
+        info["objective/cost_soc_reserve_shortfall_mwh"] = float(soc_reserve_shortfall_mwh)
+        info["objective/cost_soc_ceiling_excess_mwh"] = float(soc_ceiling_excess_mwh)
+        info["objective/slack_p_mw"] = float(slack_p)
+        info["objective/curtailment_mw"] = float(curtailment_mw)
+        info["objective/battery_soc_mwh"] = float(battery_soc_mwh)
 
-        for dev_id in storage_dev_ids:
-            battery_power = float(dev_p[dev_id])
-
-            if battery_power < 0:  # Charging (negative P = storing energy)
-                # Incentivize charging especially during high renewable times
-                battery_reward += 5.0 * abs(battery_power)
-
-            else:  # Discharging (positive P = grid injection)
-                # Only reward discharge if renewable is LOW (less than load)
-                # This prevents wasteful discharge when renewable is abundant
-                if renewable_power < load_power:
-                    # Good: discharging when renewable is low → +1.0
-                    battery_reward += 1.0 * abs(battery_power)
-                else:
-                    # Bad: discharging when renewable is high → -0.3 (penalize!)
-                    battery_reward -= 0.3 * abs(battery_power)
-
-        # SoC readiness: penalise storage being near-empty or near-full.
-        soc_penalty = 0.0
-        for idx, dev_id in enumerate(storage_dev_ids):
-            soc = des_soc[idx]
-            soc_max_mwh = self.simulator.devices[list(device_data.keys())[dev_id]].soc_max * base_mva
-            soc_ratio = soc / soc_max_mwh if soc_max_mwh > 0 else 0.0
-            # Parabola centered at 50%: penalises extremes (0% and 100%)
-            soc_penalty += -0.3 * (soc_ratio - 0.5) ** 2
-
-        # Increment the year count.
         self.year_count = (self.date - self.date_init).days // 365
-
-        r_base = r  # Save base reward before modifications
-        r = r - curtailment_penalty - import_penalty + battery_reward + soc_penalty
 
         return obs, r, terminated, truncated, info
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
-        # Save rendering setup to restore after the reset().
         render_mode = self.render_mode
-
         obs, info = super().reset(seed=seed, options=options)
-
-        # Restore the rendering setup.
         self.render_mode = render_mode
-
-        # Reset the date (for rendering).
         self.year_count = 0
         if options is not None and "date_init" in options:
             self.date_init = options["date_init"]
         else:
             self.date_init = random_date(self.np_random, 2020)
         self.date = self.date_init
-
         return obs, info
 
     def reset_date(self, date_init):
-        """Reset the date displayed in the visualization (and the year count)."""
         self.date_init = date_init
         self.date = date_init
 
     def _init_render(self, network_specs):
         title = type(self).__name__
-
         dev_type = list(network_specs["dev_type"].values())
         ps, qs = [], []
         for i in network_specs["dev_p"].keys():
@@ -254,28 +218,16 @@ class BCP_base(ANMEnv):
         soc_max = []
         for i in network_specs["des_soc"].keys():
             soc_max.append(network_specs["des_soc"][i]["MWh"][1])
-
         c1 = 100 if self.costs_clipping[0] is None else self.costs_clipping[0]
         c2 = 10000 if self.costs_clipping[1] is None else self.costs_clipping[1]
-        costs_range = (c1, c2)
-
         self.http_server, self.ws_server = rendering.start(
-            title, dev_type, ps, qs, branch_rate, bus_v_min, bus_v_max, soc_max, costs_range
+            title, dev_type, ps, qs, branch_rate, bus_v_min, bus_v_max, soc_max, (c1, c2)
         )
 
     def _update_render(self, dev_p, dev_q, branch_s, des_soc, gen_p_max, bus_v_magn, costs, network_collapsed):
         rendering.update(
-            self.ws_server.address,
-            self.date,
-            self.year_count,
-            dev_p,
-            dev_q,
-            branch_s,
-            des_soc,
-            gen_p_max,
-            bus_v_magn,
-            costs,
-            network_collapsed,
+            self.ws_server.address, self.date, self.year_count,
+            dev_p, dev_q, branch_s, des_soc, gen_p_max, bus_v_magn, costs, network_collapsed,
         )
 
     def close(self):

@@ -80,9 +80,9 @@ class LagrangianWrapper(gym.Wrapper):
         v_tolerance: float = 0.05,
         pq_limit: float = 0.0,
         lambda_init: float = 1.0,
-        lambda_lr: float = 5e-5,
+        lambda_lr: float = 1e-2,
         normalize_by_episode_length: bool = True,
-        lambda_max: float = 100.0,
+        lambda_max: float = 500.0,
     ):
 
         super().__init__(env)
@@ -150,6 +150,17 @@ class LagrangianWrapper(gym.Wrapper):
         # update lambda
         if (terminated or truncated) and self.lambda_lr > 0.0:
             self._update_lambda()
+
+        # Expose episode aggregates on episode end (for vec-env callbacks that
+        # update/sync lambda after the env has already been auto-reset).
+        if terminated or truncated:
+            if self.episode_length > 0:
+                avg_cost = self.episode_cost / float(self.episode_length)
+            else:
+                avg_cost = self.episode_cost.copy()
+            info["lagrangian/episode_cost_sum"] = self.episode_cost.copy()
+            info["lagrangian/episode_cost_avg"] = avg_cost.astype(np.float32)
+            info["lagrangian/episode_length"] = int(self.episode_length)
         
         info["lagrangian/lambda_v"] = float(self.lam[0])
         info["lagrangian/lambda_p"] = float(self.lam[1])
@@ -162,7 +173,13 @@ class LagrangianWrapper(gym.Wrapper):
         return obs, modified_reward, terminated, truncated, info
 
     def _update_lambda(self):
-        """Gradient ascent step on the dual variable."""
+        """
+        Gradient ascent step on the dual variable.
+        
+        NOTE: When using multiple parallel environments with LambdaSyncCallback,
+        this is disabled (lambda_lr=0) and only the callback updates lambda.
+        For single environment training, this performs the gradient ascent update.
+        """
         if self.normalize and self.episode_length > 0:
             avg_cost = self.episode_cost / self.episode_length
         else:
@@ -193,10 +210,12 @@ class BatteryClipWrapper(gym.Wrapper):
         # Battery P setpoint is at action[2] in the BCP environment
         # Action mapping: [RenewableGen_P, RenewableGen_Q, StorageUnit_P, StorageUnit_Q]
         self.battery_action_idx = 2
-        self.battery_power_limit = 50.0  # MW (from network.py: PMAX = 50, PMIN = -50)
-        self.battery_soc_max = 100.0  # MWh (from network.py: SOC_MAX = 100)
-        self.battery_efficiency = 0.9  # from network.py: EFF = 0.9
-        self.delta_t = 0.25
+        # Defaults used only if the wrapped env doesn't expose simulator params.
+        self._default_power_limit_mw = 50.0
+        self._default_soc_max_mwh = 100.0
+        self._default_soc_min_mwh = 0.0
+        self._default_efficiency = 0.9
+        self._default_delta_t_h = 0.25
 
     def step(self, action):
         # Get the base environment to access the simulator
@@ -213,13 +232,28 @@ class BatteryClipWrapper(gym.Wrapper):
         else:
             raw_action = action.copy()
 
-        # Get current battery SOC if available
-        current_soc = 0.0
-        if hasattr(base_env, 'simulator') and base_env.simulator.state is not None:
+        # Battery parameters (prefer simulator truth when available).
+        battery_device_id = 3  # Battery is device 3 in BCP
+        base_mva = None
+        delta_t_h = float(getattr(base_env, "delta_t", self._default_delta_t_h))
+        efficiency = self._default_efficiency
+        power_limit_mw = self._default_power_limit_mw
+        soc_max_mwh = self._default_soc_max_mwh
+        soc_min_mwh = self._default_soc_min_mwh
+
+        current_soc_mwh = 0.0
+        if hasattr(base_env, "simulator") and getattr(base_env.simulator, "state", None) is not None:
             full_state = base_env.simulator.state
-            des_soc = list(full_state["des_soc"]["MWh"].values())
-            if des_soc:
-                current_soc = des_soc[0]  # First (and only) storage device
+            current_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(battery_device_id, current_soc_mwh))
+
+            base_mva = float(getattr(base_env.simulator, "baseMVA", 0.0)) or None
+            dev = getattr(base_env.simulator, "devices", {}).get(battery_device_id, None)
+            if dev is not None and base_mva is not None:
+                # Limits are stored in p.u. in the simulator; convert to MW/MWh.
+                power_limit_mw = float(getattr(dev, "p_max", power_limit_mw / base_mva)) * base_mva
+                soc_max_mwh = float(getattr(dev, "soc_max", soc_max_mwh / base_mva)) * base_mva
+                soc_min_mwh = float(getattr(dev, "soc_min", soc_min_mwh / base_mva)) * base_mva
+                efficiency = float(getattr(dev, "eff", efficiency))
 
         # Clip battery power to physical limits AND SOC constraints
         if len(raw_action) > self.battery_action_idx:
@@ -227,22 +261,27 @@ class BatteryClipWrapper(gym.Wrapper):
             clipped_battery_action = battery_action
 
             # Apply power limits first
-            clipped_battery_action = np.clip(clipped_battery_action, -self.battery_power_limit, self.battery_power_limit)
+            clipped_battery_action = np.clip(clipped_battery_action, -power_limit_mw, power_limit_mw)
 
             # Apply SOC constraints
             if clipped_battery_action > 0:  # Discharging (positive = grid injection)
-                # Calculate maximum possible discharge power
-                if current_soc <= 0.1:
-                    max_discharge_power = 0.1 / self.delta_t / self.battery_efficiency
+                # If SOC decreases by P*dt/eff, then P_max = usable_energy*eff/dt.
+                usable_energy_mwh = max(0.0, current_soc_mwh - soc_min_mwh)
+                if delta_t_h <= 0:
+                    max_discharge_power = 0.0
                 else:
-                    max_discharge_power = current_soc / self.delta_t / self.battery_efficiency
-                max_discharge_power = min(max_discharge_power, self.battery_power_limit)
+                    max_discharge_power = usable_energy_mwh * max(efficiency, 1e-6) / delta_t_h
+                max_discharge_power = min(max_discharge_power, power_limit_mw)
                 clipped_battery_action = min(clipped_battery_action, max_discharge_power)
 
             elif clipped_battery_action < 0:  # Charging (negative = consuming from grid)
                 # Calculate maximum energy available for charging
-                max_energy_add = self.battery_soc_max - current_soc
-                max_charge_power = min(max_energy_add / self.delta_t / self.battery_efficiency, self.battery_power_limit)
+                max_energy_add = max(0.0, soc_max_mwh - current_soc_mwh)
+                if delta_t_h <= 0:
+                    max_charge_power = 0.0
+                else:
+                    max_charge_power = max_energy_add / delta_t_h / max(efficiency, 1e-6)
+                max_charge_power = min(max_charge_power, power_limit_mw)
                 clipped_battery_action = max(clipped_battery_action, -max_charge_power)
 
             raw_action[self.battery_action_idx] = clipped_battery_action

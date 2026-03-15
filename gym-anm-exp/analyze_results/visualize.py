@@ -11,6 +11,7 @@ import sys
 import time
 import argparse
 import fcntl
+import numpy as np
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 from rl_agents.hyperparameters import ENV_ID, MAX_EVAL_EP_LENGTH  # ADDED MAX_EVAL_EP_LENGTH
@@ -144,8 +145,6 @@ def print_env_info(anm_env):
         print("\n")
 
 
-
-
 def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=None):
     """Print detailed information about the current step."""
     print("\n")
@@ -242,18 +241,40 @@ def make_env(env_id, vec_env_path, wrappers=True):
     """
     Create a single (non-vectorized) environment with the same wrappers
     used during training, suitable for visualization.
+
+    Wrapper order MUST match train.py exactly:
+        TimeLimitWrapper → NormalizeActionWrapper → BatteryClipWrapper → LagrangianWrapper
+    BatteryClipWrapper.step calls self.env.rescale_action, which only exists on
+    NormalizeActionWrapper. Placing BatteryClipWrapper before NormalizeActionWrapper
+    breaks all battery clipping).
     """
     import gymnasium as gym
     from stable_baselines3.common.vec_env import DummyVecEnv
 
+    # Load the trained lambda so the agent sees the same reward landscape it
+    # was trained on.  Falls back to [1, 1, 1] if the file is missing.
+    lambda_init = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+    lambda_path = os.path.join(vec_env_path, '..', 'lambda_state.npy')
+    lambda_path = os.path.normpath(lambda_path)
+    if os.path.exists(lambda_path):
+        try:
+            lambda_init = np.load(lambda_path).astype(np.float32)
+            print(f"[make_env] Loaded trained lambda: {lambda_init}")
+        except Exception as e:
+            print(f"[make_env] Warning: could not load lambda ({e}), using defaults.")
+    else:
+        print(f"[make_env] lambda_state.npy not found at {lambda_path}, using defaults.")
+
     def _init():
         env = gym.make(env_id)
         if wrappers:
-            # env = BatteryClipWrapper(env)  # Temporarily disabled for debugging
+            # Order must mirror train.py → make_train_env()
             env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
-            # lambda_lr=0.0 → multiplier frozen during eval (intentional)
-            env = LagrangianWrapper(env, v_tolerance=0.05, lambda_lr=0.0)
+            env = BatteryClipWrapper(env)   # needs NormalizeActionWrapper below it
+            # lambda_lr=0.0 keeps the multiplier frozen during visualization
+            env = LagrangianWrapper(env, v_tolerance=0.05, lambda_lr=0.0,
+                                    lambda_init=lambda_init)
         return env
 
     return DummyVecEnv([_init])
@@ -356,7 +377,7 @@ def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=F
     except KeyboardInterrupt:
         print("\n\nVisualization interrupted by user")
 
-    # --- Timing statistics ---
+    # Timing statistics
     if action_times:
         mean_t = sum(action_times) / len(action_times)
         std_t = (sum((t - mean_t) ** 2 for t in action_times) / len(action_times)) ** 0.5

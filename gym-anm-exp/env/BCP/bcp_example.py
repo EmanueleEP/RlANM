@@ -26,7 +26,7 @@ class BCP(BCP_base):
         
         # Initial battery SoC configuration (in MWh)
         # This could be made configurable or read from a config file
-        self.initial_battery_soc_mwh = 50.0  # 50% of 100 MWh capacity
+        self.initial_battery_soc_mwh = 1.0
 
         # # load from file
         # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)
@@ -50,14 +50,14 @@ class BCP(BCP_base):
 
         
 
-        # --- Load (P, Q) injections ---
+        # Load (P, Q) injections
         load_device_ids = [1]  # IDs in state vector
         for idx, dev_id in enumerate(load_device_ids):
             p_load = self.P_loads[idx]  # row = device
             state[dev_id] = p_load[t_0]
             state[n_dev + dev_id] = p_load[t_0] * self.simulator.devices[dev_id].qp_ratio
 
-        # --- Non-slack generator (P, Q) injections ---
+        # Non-slack generator (P, Q) injections
         gen_device_ids = [2]
         for idx, dev_id in enumerate(gen_device_ids):
             p_max = self.P_maxs[idx]  # row = generator device
@@ -67,7 +67,7 @@ class BCP(BCP_base):
                 self.simulator.devices[dev_id].q_min, self.simulator.devices[dev_id].q_max
             )
 
-        # --- Energy storage unit ---
+        # Energy storage unit
         storage_device_ids = [3]
         for idx, dev_id in enumerate(storage_device_ids):
             # Use configured initial SoC (in MWh)
@@ -110,21 +110,27 @@ class BCP(BCP_base):
         return np.array(vars)
 
     def reset(self, **kwargs):
+        # Call parent reset first to initialize simulator state
         obs, info = super().reset(**kwargs)
 
         # Reset the time of the day based on the auxiliary variable.
-        print(f"INFO PRINTED: {info}")
         new_date = self.date + self.state[-1] * self.timestep_length
         super().reset_date(new_date)
         
-        # IMPORTANT: Initialize battery SoC in the simulator state
+        # IMPORTANT: Initialize battery SoC in the simulator state AFTER parent reset
         # Use configured initial SoC
         storage_device_ids = [3]
         for idx, dev_id in enumerate(storage_device_ids):
             # Use configured initial SoC (in MWh)
             initial_soc_mwh = self.initial_battery_soc_mwh
             
-            # Convert to per unit for internal consistency
+            # Set the SoC in the simulator's state (use MWh value directly)
+            if hasattr(self.simulator, 'state') and 'des_soc' in self.simulator.state:
+                des_soc_mwh = self.simulator.state['des_soc']['MWh']
+                if dev_id in des_soc_mwh:
+                    des_soc_mwh[dev_id] = initial_soc_mwh
+            
+            # Also set device SoC in per unit (as expected by the device)
             soc_max_mwh = self.simulator.devices[dev_id].soc_max * self.simulator.baseMVA
             initial_soc_pu = initial_soc_mwh / soc_max_mwh if soc_max_mwh > 0 else 0.0
             
@@ -133,15 +139,7 @@ class BCP(BCP_base):
             soc_max = self.simulator.devices[dev_id].soc_max
             initial_soc_pu = np.clip(initial_soc_pu, soc_min, soc_max)
             
-            # Set the SoC in the simulator's state (use MWh value directly)
-            if hasattr(self.simulator, 'state') and 'des_soc' in self.simulator.state:
-                des_soc_keys = list(self.simulator.state['des_soc']['MWh'].keys())
-                if len(des_soc_keys) > idx:
-                    des_soc_key = des_soc_keys[idx]
-                    # Use the MWh value directly from configuration
-                    self.simulator.state['des_soc']['MWh'][des_soc_key] = initial_soc_mwh
-            
-            # Set device SoC in p.u. (as expected by the device)
+            # Set device SoC in p.u.
             self.simulator.devices[dev_id].soc = initial_soc_pu
 
         return obs, info

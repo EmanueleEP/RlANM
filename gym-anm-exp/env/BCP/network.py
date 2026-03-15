@@ -56,22 +56,12 @@ network["bus"] = np.array(
     ]
 )
 
-"""
-network["device"] = np.array(
-    [
-        [0, 0, 0, None, 200, -200, 200, -200, None, None, None, None, None, None, None],  # slack
-        [2, 2, -1, 0.2, 0, -10, None, None, None, None, None, None, None, None, None],  # house
-        [2, 2, 2, None, 30, 0, 30, -30, 20, None, 15, -15, None, None, None], # solar 
-        [2, 2, 4, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0, 0.9],    # battery
-    ]
-)"""
-
 _device_rows = np.array(
     [
-        [0, 0, 0, None, 200, -200, 200, -200, None, None, None, None, None, None, None],  # slack
+        [0, 0, 0, None, 20, -20, 20, -20, None, None, None, None, None, None, None],  # slack
         [1, 2, -1, 0.2, 0, -20, None, None, None, None, None, None, None, None, None],  # load
         [2, 2, 2, None, 30, 0, 30, -30, 20, None, 15, -15, None, None, None], # solar
-        [3, 2, 3, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 1.0, 0.9],  # battery
+        [3, 2, 3, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0.1, 0.9],  # battery
     ],
     dtype=object 
 )
@@ -87,6 +77,4 @@ network["branch"] = np.array(
         [1, 2, 0.03, 0.022, 0.0, 10, 1, 0],
     ]
 )
-# changed 25 to 10
-
 
