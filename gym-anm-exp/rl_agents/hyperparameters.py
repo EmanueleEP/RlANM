@@ -37,15 +37,15 @@ ENV_ID = "BCP-v0"
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
 TRAIN_STEPS = 1500000
-MAX_TRAINING_EP_LENGTH = 5000
-EVAL_FREQ = 10000
-N_EVAL_EPISODES = 5
-MAX_EVAL_EP_LENGTH = 3000
+MAX_TRAINING_EP_LENGTH = 5000 
+EVAL_FREQ = 20000  
+N_EVAL_EPISODES = 5  
+MAX_EVAL_EP_LENGTH = 3000  
 
 # new parameter
-N_ENVS = 2  # number of parallel environments
+N_ENVS = 1 
 
-USE_LAGRANGIAN = True  # FIXED: Was False, now True to enforce constraints
+USE_LAGRANGIAN = False  
 
 LOG_DIR = BASE_DIR + ENV_ID + '/'
 os.makedirs(LOG_DIR, exist_ok=True)

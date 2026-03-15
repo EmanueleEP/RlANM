@@ -53,20 +53,32 @@ print(f"Log directory: {LOG_DIR}")
 AGENT_PATH = os.path.join(LOG_DIR, 'best_model.zip')
 ENV_PATH = os.path.join(LOG_DIR, 'training_vec_env')
 EVAL_FILE = os.path.join(LOG_DIR, 'evaluations.npz')
-LAMBDA_PATH = os.path.join(LOG_DIR, 'lambda_state.npy')  # MOVED HERE - defined before use
+LAMBDA_PATH = os.path.join(LOG_DIR, 'lambda_state.npy')
 
 continuing_training = os.path.exists(AGENT_PATH)
 
 # lagrangian parameters
-V_TOLERANCE = 0.05
-LAMBDA_LR = 1e-3
+V_TOLERANCE = 0.02
+PQ_LIMIT = 0.02
+LAMBDA_LR = 1e-2
 
 # Restore lambda from disk if continuing training
-lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+lambda_init_value = np.array([100.0, 100.0, 100.0], dtype=np.float32)
 
 if USE_LAGRANGIAN and continuing_training and os.path.exists(LAMBDA_PATH):
-    lambda_init_value = np.load(LAMBDA_PATH).astype(np.float32)  # keep shape (3,)
-    print(f"Restored lambda from checkpoint: {lambda_init_value}")
+    try:
+        lambda_init_value = np.load(LAMBDA_PATH).astype(np.float32)
+        # Validate loaded lambda has correct shape and bounds
+        if lambda_init_value.shape != (3,):
+            print(f"WARNING: Loaded lambda has wrong shape {lambda_init_value.shape}, expected (3,). Using defaults.")
+            lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+        else:
+            # Ensure lambda is within bounds [0, lambda_max]
+            lambda_init_value = np.clip(lambda_init_value, 0.0, 500.0)
+            print(f"Restored lambda from checkpoint: {lambda_init_value}")
+    except Exception as e:
+        print(f"WARNING: Could not load lambda checkpoint: {e}. Using defaults.")
+        lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
 
 if continuing_training:
     print(f"Found existing model at {AGENT_PATH}")
@@ -104,7 +116,17 @@ def make_train_env(rank: int = 0):
         env = NormalizeActionWrapper(env)
         env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
         if USE_LAGRANGIAN:
-            env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=LAMBDA_LR, lambda_init=lambda_init_value)
+            # When using multiple envs with sync callback, disable individual updates (lambda_lr=0)
+            # The callback will handle synchronization and averaging
+            # For single env, use LAMBDA_LR to enable gradient ascent
+            effective_lambda_lr = 0.0 if (N_ENVS > 1) else LAMBDA_LR
+            env = LagrangianWrapper(
+                env,
+                v_tolerance=V_TOLERANCE,
+                pq_limit=PQ_LIMIT,
+                lambda_lr=effective_lambda_lr,
+                lambda_init=lambda_init_value,
+            )
         env = Monitor(env, LOG_DIR)
         env.reset(seed=SEED + rank)
         return env
@@ -120,7 +142,13 @@ def make_eval_env(rank: int = 0):
         env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
         # lambda_lr=0 disables dual updates during evaluation
         if USE_LAGRANGIAN:
-            env = LagrangianWrapper(env, v_tolerance=V_TOLERANCE, lambda_lr=0.0, lambda_init=lambda_init_value)
+            env = LagrangianWrapper(
+                env,
+                v_tolerance=V_TOLERANCE,
+                pq_limit=PQ_LIMIT,
+                lambda_lr=0.0,
+                lambda_init=lambda_init_value,
+            )
         env = Monitor(env, LOG_DIR)
         env.reset(seed=SEED + 1000 + rank)
         return env
@@ -173,7 +201,7 @@ if old_data is not None:
 
 
 if USE_LAGRANGIAN and N_ENVS > 1:
-    sync_callback = LambdaSyncCallback(train_env, verbose=1)
+    sync_callback = LambdaSyncCallback(train_env, dual_lr=LAMBDA_LR, verbose=1)
     battery_callback = BatteryExplorationCallback(verbose=1, battery_reward_scale=0.1)
     callbacks = [eval_callback, sync_callback, battery_callback]
 else:
@@ -237,10 +265,23 @@ if __name__ == "__main__":
 
                 if lambdas:
                     avg_lambda = np.mean(np.stack(lambdas, axis=0), axis=0)
+                    # Validate before saving
+                    assert avg_lambda.shape == (3,), f"Lambda has invalid shape: {avg_lambda.shape}"
+                    assert np.all(avg_lambda >= 0.0) and np.all(avg_lambda <= 500.0), f"Lambda out of bounds: {avg_lambda}"
+                    
+                    # Save with backup
+                    lambda_backup_path = LAMBDA_PATH.replace('.npy', '_backup.npy')
+                    if os.path.exists(LAMBDA_PATH):
+                        np.save(lambda_backup_path, np.load(LAMBDA_PATH))
+                    
                     np.save(LAMBDA_PATH, avg_lambda)
                     print(f"Saved lambdas={avg_lambda} to {LAMBDA_PATH}")
+                else:
+                    print("Warning: No LagrangianWrapper found in training environments")
+            except AssertionError as e:
+                print(f"Error: Lambda validation failed: {e}. Not saving.")
             except Exception as e:
-                print(f"Warning: could not save lambda state: {e}")
+                print(f"Error: Could not save lambda state: {e}")
         
     except Exception as e:
         print(f"Error during training: {e}")
