@@ -45,7 +45,7 @@ MAX_EVAL_EP_LENGTH = 3000
 # new parameter
 N_ENVS = 1 
 
-USE_LAGRANGIAN = False  
+USE_LAGRANGIAN = True  
 
 LOG_DIR = BASE_DIR + ENV_ID + '/'
 os.makedirs(LOG_DIR, exist_ok=True)

@@ -118,6 +118,23 @@ def parse_args():
     parser.add_argument("agent", type=str, help="Agent to train")
     parser.add_argument("--path", '-p', type=str, default=None, help='The path to the run to continue')
     parser.add_argument("--seed", '-s', type=int, help='Random seed', default=1)
+    parser.add_argument(
+        "--steps",
+        type=int,
+        default=None,
+        help="Override TRAIN_STEPS for quick runs/debugging (default: use hyperparameters.py).",
+    )
+    parser.add_argument(
+        "--step-log-every",
+        type=int,
+        default=1000,
+        help="Write one JSONL log row every N timesteps (also logs on episode end).",
+    )
+    parser.add_argument(
+        "--disable-step-log",
+        action="store_true",
+        help="Disable step-level JSONL logging.",
+    )
 
     args = parser.parse_args()
 

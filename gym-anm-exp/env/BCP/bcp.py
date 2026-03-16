@@ -6,15 +6,26 @@ from typing import Optional
 
 from gym_anm import ANMEnv
 from .rendering.py import rendering
-from .network import network
+from .network import network as network_default
 from .utils import random_date
 
 
 class BCP_base(ANMEnv):
     metadata = {"render_modes": ["human"]}
 
-    def __init__(self, observation, K, delta_t, gamma, lamb, aux_bounds=None, costs_clipping=(None, None), seed=None):
-        super().__init__(network, observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping, seed)
+    def __init__(
+        self,
+        observation,
+        K,
+        delta_t,
+        gamma,
+        lamb,
+        aux_bounds=None,
+        costs_clipping=(None, None),
+        seed=None,
+        network_spec=network_default,
+    ):
+        super().__init__(network_spec, observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping, seed)
         self.network_specs = self.simulator.get_rendering_specs()
         self.timestep_length = dt.timedelta(minutes=int(60 * delta_t))
         self.date = None
@@ -58,16 +69,19 @@ class BCP_base(ANMEnv):
 
         self.date += self.timestep_length
 
-        full_state = self.simulator.state
+        full_state = self.simulator.state or {}
 
         device_data = self.simulator.devices
         base_mva = self.simulator.baseMVA
 
+        dev_p_dict = full_state.get("dev_p", {}).get("MW", {})
+        dev_q_dict = full_state.get("dev_q", {}).get("MVAr", {})
+        gen_p_max_dict = full_state.get("gen_p_max", {}).get("MW", {})
+        bus_v_dict = full_state.get("bus_v_magn", {}).get("pu", {})
+
         device_ids = sorted(device_data.keys())
-        dev_p = np.array([full_state["dev_p"]["MW"].get(i, 0.0) for i in device_ids], dtype=np.float32)
-        dev_q = np.array([full_state["dev_q"]["MVAr"].get(i, 0.0) for i in device_ids], dtype=np.float32)
-        gen_ids = sorted(full_state.get("gen_p_max", {}).get("MW", {}).keys())
-        gen_p_max = np.array([full_state["gen_p_max"]["MW"].get(i, 0.0) for i in gen_ids], dtype=np.float32)
+        dev_p = np.array([dev_p_dict.get(i, 0.0) for i in device_ids], dtype=np.float32)
+        dev_q = np.array([dev_q_dict.get(i, 0.0) for i in device_ids], dtype=np.float32)
 
         device_type = np.array(
             [getattr(device_data[i], "dev_type", 1) for i in device_ids], dtype=np.int32
@@ -98,38 +112,37 @@ class BCP_base(ANMEnv):
                 q_violation[i] += max(0, q_min[i] - dev_q[i])
 
         bus_ids = sorted(self.simulator.buses.keys())
-        bus_v = np.array([full_state["bus_v_magn"]["pu"].get(i, 1.0) for i in bus_ids], dtype=float)
+        bus_v = np.array([bus_v_dict.get(i, 1.0) for i in bus_ids], dtype=float)
         bus_objects = [self.simulator.buses[i] for i in bus_ids]
         v_max = np.array([getattr(b, 'v_max', 1.1) for b in bus_objects], dtype=float)
         v_min = np.array([getattr(b, 'v_min', 0.9) for b in bus_objects], dtype=float)
         v_violation = np.maximum(0, bus_v - v_max) + np.maximum(0, v_min - bus_v)
 
         info["constraint_costs"] = np.array([
-            np.mean(v_violation),
-            np.mean(p_violation) / base_mva,
-            np.mean(q_violation) / base_mva,
+            np.max(v_violation) if len(v_violation) > 0 else 0.0,
+            np.max(p_violation) / base_mva if len(p_violation) > 0 else 0.0,
+            np.max(q_violation) / base_mva if len(q_violation) > 0 else 0.0,
         ], dtype=np.float32)
+        info["pfe_converged"] = bool(getattr(self.simulator, "pfe_converged", True))
 
 
         # objective:
-        #   - minimize renewable curtailment (energy not used/stored/exported)
-        #   - minimize reliance on the slack generator (imports from slack)
+        #   - minimize renewable curtailment (true energy waste)
+        #   - maximize self-sufficiency (reduce reliance on slack/grid interaction)
 
         delta_t_h = float(getattr(self, "delta_t", 0.25))
-        slack_p = float(full_state["dev_p"]["MW"].get(0, 0.0))
+        slack_p = float(dev_p_dict.get(0, 0.0))
         
-        # Slack penalty choice:
-        # - Imports-only (penalize relying on slack as supplier): max(0, slack_p)
-        # - Abs (penalize any interaction with slack, import or export): abs(slack_p)
-        # slack_import_mw = max(0.0, slack_p)
-        slack_import_mw = abs(slack_p)
+        # Slack interaction (asymmetric):
+        # - import (slack_p > 0): drawing from the grid (hurts self-sufficiency)
+        # - export (slack_p < 0): sending surplus to the grid (less bad than curtailment)
+        slack_import_mw = max(0.0, slack_p)
+        slack_export_mw = max(0.0, -slack_p)
 
         # Curtailment derived from potential renewable generation (gen_p_max) vs actual injection (dev_p).
         # Only sum devices with DEV_TYPE == 2 (wind/solar).
         renewable_ids = [i for i in device_ids if getattr(device_data[i], "dev_type", None) == 2]
         curtailment_mw = 0.0
-        gen_p_max_dict = full_state.get("gen_p_max", {}).get("MW", {})
-        dev_p_dict = full_state.get("dev_p", {}).get("MW", {})
         for dev_id in renewable_ids:
             if dev_id not in gen_p_max_dict:
                 continue
@@ -143,7 +156,8 @@ class BCP_base(ANMEnv):
 
         # Weights are in "reward per MWh".
         W_CURTAIL = 1.0
-        W_SLACK_IMPORT = 1.0
+        W_SLACK_IMPORT = 2.0
+        W_SLACK_EXPORT = 0.2
         W_CYCLE = 0.01
         W_SOC_RESERVE = 2.0
         # start penalizing when battery SoC is below the following MWh to encourage maintaining a reserve for reliability
@@ -154,6 +168,7 @@ class BCP_base(ANMEnv):
 
         curtailment_mwh = curtailment_mw * delta_t_h
         slack_import_mwh = slack_import_mw * delta_t_h
+        slack_export_mwh = slack_export_mw * delta_t_h
         cycle_mwh = abs(battery_p) * delta_t_h
         soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh)
         soc_ceiling_excess_mwh = max(0.0, battery_soc_mwh - SOC_CEILING_MWH)
@@ -161,17 +176,19 @@ class BCP_base(ANMEnv):
         r = r - (
             W_CURTAIL * curtailment_mwh
             + W_SLACK_IMPORT * slack_import_mwh
+            + W_SLACK_EXPORT * slack_export_mwh
             + W_CYCLE * cycle_mwh
             + W_SOC_RESERVE * soc_reserve_shortfall_mwh
             + W_SOC_CEILING * soc_ceiling_excess_mwh
         )
 
         info["objective_costs"] = np.array(
-            [curtailment_mwh, slack_import_mwh, cycle_mwh, soc_reserve_shortfall_mwh, soc_ceiling_excess_mwh],
+            [curtailment_mwh, slack_import_mwh, slack_export_mwh, cycle_mwh, soc_reserve_shortfall_mwh, soc_ceiling_excess_mwh],
             dtype=np.float32,
         )
         info["objective/cost_curtailment_mwh"] = float(curtailment_mwh)
         info["objective/cost_slack_import_mwh"] = float(slack_import_mwh)
+        info["objective/cost_slack_export_mwh"] = float(slack_export_mwh)
         info["objective/cost_cycle_mwh"] = float(cycle_mwh)
         info["objective/cost_soc_reserve_shortfall_mwh"] = float(soc_reserve_shortfall_mwh)
         info["objective/cost_soc_ceiling_excess_mwh"] = float(soc_ceiling_excess_mwh)

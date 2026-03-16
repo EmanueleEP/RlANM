@@ -29,7 +29,10 @@ class LambdaSyncCallback(BaseCallback):
         super().__init__(verbose)
         self.dual_lr = float(dual_lr)
         self._wrappers = []
-        for e in vec_env.envs:
+        inner = vec_env
+        while hasattr(inner, "venv"):
+            inner = inner.venv
+        for e in inner.envs:
             w = _find_lagrangian(e)
             if w is None:
                 raise ValueError("Could not find LagrangianWrapper in a sub-env.")

@@ -6,6 +6,63 @@ import gymnasium as gym
 import numpy as np
 
 
+class ForecastObsWrapper(gym.ObservationWrapper):
+    """
+    Appends a short lookahead window of exogenous variables to the observation.
+
+    For BCP-like envs exposing:
+    - `P_loads`: shape (n_loads, steps_per_day)
+    - `P_maxs`:  shape (n_gens,  steps_per_day)
+    - `state[-1]`: time index in [0, steps_per_day)
+
+    The added features are: for h=1..H, [loads(h), gen_max(h)] flattened.
+    """
+
+    def __init__(self, env: gym.Env, horizon_steps: int = 4):
+        super().__init__(env)
+        self.horizon_steps = int(horizon_steps)
+        if self.horizon_steps <= 0:
+            raise ValueError("horizon_steps must be >= 1")
+
+        base = env.unwrapped
+        if not hasattr(base, "P_loads") or not hasattr(base, "P_maxs"):
+            raise ValueError("Underlying env must expose P_loads and P_maxs for ForecastObsWrapper.")
+
+        self._p_loads = np.asarray(base.P_loads, dtype=np.float32)
+        self._p_maxs = np.asarray(base.P_maxs, dtype=np.float32)
+        if self._p_loads.ndim != 2 or self._p_maxs.ndim != 2:
+            raise ValueError("P_loads and P_maxs must be 2D arrays.")
+
+        self._steps_per_day = int(self._p_loads.shape[1])
+        if self._p_maxs.shape[1] != self._steps_per_day:
+            raise ValueError("P_loads and P_maxs must have the same number of timesteps per day.")
+
+        added = self.horizon_steps * (self._p_loads.shape[0] + self._p_maxs.shape[0])
+        old_space = self.observation_space
+        if not isinstance(old_space, gym.spaces.Box) or len(old_space.shape) != 1:
+            raise ValueError("ForecastObsWrapper expects a 1D Box observation space.")
+
+        # Keep finite bounds for SB3 compatibility (inf bounds can cause warnings/issues).
+        forecast_low = -1e6 * np.ones(added, dtype=np.float32)
+        forecast_high = 1e6 * np.ones(added, dtype=np.float32)
+        low = np.concatenate([np.asarray(old_space.low, dtype=np.float32), forecast_low])
+        high = np.concatenate([np.asarray(old_space.high, dtype=np.float32), forecast_high])
+        self.observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float32)
+
+    def observation(self, observation):
+        base = self.env.unwrapped
+        time_idx = int(getattr(base, "state", np.array([0]))[-1])
+
+        feats = []
+        for h in range(1, self.horizon_steps + 1):
+            idx = (time_idx + h) % self._steps_per_day
+            feats.append(self._p_loads[:, idx])
+            feats.append(self._p_maxs[:, idx])
+        forecast = np.concatenate(feats, axis=0).astype(np.float32)
+
+        return np.concatenate([np.asarray(observation, dtype=np.float32), forecast], axis=0)
+
+
 class NormalizeActionWrapper(gym.Wrapper):
     """
     Normalizes the action space of the environment to [-1, 1]^N.
@@ -61,6 +118,32 @@ class TimeLimitWrapper(gym.Wrapper):
         self._elapsed_steps += 1
         if self._elapsed_steps >= self.max_episode_steps:
             truncated = True
+        return obs, reward, terminated, truncated, info
+
+
+class PFETerminateWrapper(gym.Wrapper):
+    """
+    Early-terminate the episode when the power flow does not converge.
+
+    Rationale: rare non-convergence steps can create extremely high-variance returns and
+    destabilize PPO training. Terminating immediately limits the damage and provides a
+    consistent learning signal.
+    """
+
+    def __init__(self, env: gym.Env, penalty: float = 100.0):
+        super().__init__(env)
+        self.penalty = float(penalty)
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+
+        pfe_converged = info.get("pfe_converged", True)
+        if pfe_converged is False:
+            reward = float(reward) - self.penalty
+            terminated = True
+            info["pfe_terminated"] = True
+            info["pfe_penalty"] = float(self.penalty)
+
         return obs, reward, terminated, truncated, info
 
 

@@ -19,7 +19,7 @@ import gymnasium as gym
 
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
@@ -28,9 +28,17 @@ import torch
 from .hyperparameters import *
 from .callbacks import ProgressBarManager, EvalCallback
 from .utils import save_hyperparameters, parse_args, make_log_dirs  # REMOVED make_envs, added save_hyperparameters
-from .wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper
+from .wrappers import (
+    LagrangianWrapper,
+    TimeLimitWrapper,
+    NormalizeActionWrapper,
+    BatteryClipWrapper,
+    PFETerminateWrapper,
+    ForecastObsWrapper,
+)
 from .lambda_sync_callback import LambdaSyncCallback
 from .exploration_callbacks import BatteryExplorationCallback
+from .step_logger_callback import StepLoggerCallback
 
 # Read command line arguments.
 args = parse_args()
@@ -45,6 +53,11 @@ else:
 
 print(f"Training {args.agent} with seed {SEED}")
 
+# Allow quick debug runs without editing hyperparameters.py
+if args.steps is not None:
+    TRAIN_STEPS = int(args.steps)
+    print(f"Overriding TRAIN_STEPS via CLI: {TRAIN_STEPS}")
+
 # Make log directories.
 LOG_DIR, TENSORBOARD_LOG = make_log_dirs(LOG_DIR)
 print(f"Log directory: {LOG_DIR}")
@@ -58,12 +71,42 @@ LAMBDA_PATH = os.path.join(LOG_DIR, 'lambda_state.npy')
 continuing_training = os.path.exists(AGENT_PATH)
 
 # lagrangian parameters
-V_TOLERANCE = 0.02
-PQ_LIMIT = 0.02
-LAMBDA_LR = 1e-2
+V_TOLERANCE = 0.01
+PQ_LIMIT = 0.01
+LAMBDA_LR = 5e-2
+
+# PPO stability parameters
+PPO_LR_INITIAL = 3e-4
+PPO_LR_FINAL = 3e-5
+PPO_CLIP_INITIAL = 0.2
+PPO_CLIP_FINAL = 0.1
+PPO_TARGET_KL = 0.03
+
+# VecNormalize parameters (reduces reward/obs scale issues)
+NORM_OBS = True
+NORM_REWARD = True
+CLIP_OBS = 10.0
+CLIP_REWARD = 50.0
+
+# Lookahead observation features (requires retraining when enabled)
+# Set to 0 to disable (keeps observation space unchanged).
+FORECAST_HORIZON_STEPS = 0
+
+# Early termination on non-converged power flow
+PFE_TERMINATE_PENALTY = 100.0
+
+
+def linear_schedule(initial_value: float, final_value: float = 0.0):
+    initial_value = float(initial_value)
+    final_value = float(final_value)
+
+    def func(progress_remaining: float) -> float:
+        return final_value + progress_remaining * (initial_value - final_value)
+
+    return func
 
 # Restore lambda from disk if continuing training
-lambda_init_value = np.array([100.0, 100.0, 100.0], dtype=np.float32)
+lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
 
 if USE_LAGRANGIAN and continuing_training and os.path.exists(LAMBDA_PATH):
     try:
@@ -115,6 +158,8 @@ def make_train_env(rank: int = 0):
         env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
         env = NormalizeActionWrapper(env)
         env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
+        if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
+            env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
         if USE_LAGRANGIAN:
             # When using multiple envs with sync callback, disable individual updates (lambda_lr=0)
             # The callback will handle synchronization and averaging
@@ -127,6 +172,7 @@ def make_train_env(rank: int = 0):
                 lambda_lr=effective_lambda_lr,
                 lambda_init=lambda_init_value,
             )
+        env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
         env = Monitor(env, LOG_DIR)
         env.reset(seed=SEED + rank)
         return env
@@ -140,6 +186,8 @@ def make_eval_env(rank: int = 0):
         env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
         env = NormalizeActionWrapper(env)
         env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
+        if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
+            env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
         # lambda_lr=0 disables dual updates during evaluation
         if USE_LAGRANGIAN:
             env = LagrangianWrapper(
@@ -149,6 +197,7 @@ def make_eval_env(rank: int = 0):
                 lambda_lr=0.0,
                 lambda_init=lambda_init_value,
             )
+        env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
         env = Monitor(env, LOG_DIR)
         env.reset(seed=SEED + 1000 + rank)
         return env
@@ -159,6 +208,23 @@ try:
     # Use make_vec_env with factory functions - this is the CORRECT way
     train_env = DummyVecEnv([make_train_env(rank=i) for i in range(N_ENVS)])
     eval_env = DummyVecEnv([make_eval_env(rank=0)])
+    train_env = VecNormalize(
+        train_env,
+        gamma=GAMMA,
+        training=True,
+        norm_obs=NORM_OBS,
+        norm_reward=NORM_REWARD,
+        clip_obs=CLIP_OBS,
+        clip_reward=CLIP_REWARD,
+    )
+    eval_env = VecNormalize(
+        eval_env,
+        gamma=GAMMA,
+        training=False,
+        norm_obs=NORM_OBS,
+        norm_reward=False,  # report true reward during evaluation
+        clip_obs=CLIP_OBS,
+    )
     print("Environments created successfully")
 
 except Exception as e:
@@ -208,6 +274,16 @@ else:
     battery_callback = BatteryExplorationCallback(verbose=1, battery_reward_scale=0.1)
     callbacks = [eval_callback, battery_callback]
 
+if not args.disable_step_log:
+    step_log_path = os.path.join(LOG_DIR, "step_log.jsonl")
+    step_logger = StepLoggerCallback(
+        step_log_path,
+        log_observations=True,
+        log_every=int(args.step_log_every),
+    )
+    print(f"Step log: {os.path.abspath(step_log_path)} (every {int(args.step_log_every)} steps + episode end)")
+    callbacks.append(step_logger)
+
 print("Creating model...")
 
 # Agent
@@ -221,8 +297,28 @@ try:
         print("Loaded existing model successfully")
     else:
         # Create new model
-        model = ALGO(POLICY, train_env, gamma=GAMMA, verbose=1, 
-                    tensorboard_log=TENSORBOARD_LOG, device=device)
+        if args.agent == "PPO":
+            model = PPO(
+                POLICY,
+                train_env,
+                gamma=GAMMA,
+                verbose=1,
+                tensorboard_log=TENSORBOARD_LOG,
+                device=device,
+                learning_rate=linear_schedule(PPO_LR_INITIAL, PPO_LR_FINAL),
+                clip_range=linear_schedule(PPO_CLIP_INITIAL, PPO_CLIP_FINAL),
+                target_kl=PPO_TARGET_KL,
+            )
+        else:
+            model = ALGO(
+                POLICY,
+                train_env,
+                gamma=GAMMA,
+                verbose=1,
+                tensorboard_log=TENSORBOARD_LOG,
+                device=device,
+                learning_rate=linear_schedule(PPO_LR_INITIAL, PPO_LR_FINAL),
+            )
         print("Model created successfully")
 except Exception as e:
     print(f"Error creating/loading model: {e}")
@@ -245,9 +341,16 @@ if __name__ == "__main__":
         # Save lambda state if Lagrangian was used
         if USE_LAGRANGIAN:
             try:
+                def unwrap_envs(vec_env):
+                    inner = vec_env
+                    while hasattr(inner, "venv"):
+                        inner = inner.venv
+                    return getattr(inner, "envs", [])
+
                 lambdas = []
                 # Initialize with first environment and traverse wrappers
-                inner = train_env.envs[0]
+                base_envs = unwrap_envs(train_env)
+                inner = base_envs[0] if base_envs else None
                 while hasattr(inner, 'env'):
                     if isinstance(inner, LagrangianWrapper):
                         lambdas.append(inner.get_lambda())
@@ -255,7 +358,7 @@ if __name__ == "__main__":
                     inner = inner.env
                 
                 # Also check other environments for safety
-                for env in train_env.envs[1:]:
+                for env in base_envs[1:]:
                     inner = env
                     while hasattr(inner, 'env'):
                         if isinstance(inner, LagrangianWrapper):

@@ -33,12 +33,11 @@ class BatteryExplorationCallback(BaseCallback):
         
     def _on_step(self) -> bool:
         """Called at each training step to monitor battery usage."""
-        # Get battery information from the environment
-        if hasattr(self.training_env, 'envs'):
-            # For vectorized environments
-            env = self.training_env.envs[0]
-        else:
-            env = self.training_env
+        # Unwrap VecEnv wrappers (e.g., VecNormalize) to reach the underlying env list.
+        vec = self.training_env
+        while hasattr(vec, "venv"):
+            vec = vec.venv
+        env = vec.envs[0] if hasattr(vec, "envs") and vec.envs else vec
             
         # Navigate through wrappers to get the base environment
         base_env = env
@@ -48,11 +47,11 @@ class BatteryExplorationCallback(BaseCallback):
         if hasattr(base_env, 'simulator'):
             # Get battery power and SOC from simulator state
             full_state = base_env.simulator.state
-            dev_p = list(full_state["dev_p"]["MW"].values())
-            des_soc = list(full_state["des_soc"]["MWh"].values())
-            
-            battery_p = dev_p[3]  # Device 3 is the battery
-            battery_soc = des_soc[0]  # First (and only) storage device
+            dev_p = full_state.get("dev_p", {}).get("MW", {})
+            des_soc = full_state.get("des_soc", {}).get("MWh", {})
+
+            battery_p = float(dev_p.get(3, 0.0))  # Device 3 is the battery
+            battery_soc = float(des_soc.get(3, 0.0))  # Battery SoC in MWh
             
             # Track battery usage history
             self.battery_usage_history.append(battery_p)
