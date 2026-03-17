@@ -54,6 +54,7 @@ def main() -> int:
                 "objective_costs_sum": None,
                 "constraint_costs_sum": None,
                 "pfe_ok_steps": 0,
+                "objective_dict_sums": {},
             }
         return acc[env_idx]
 
@@ -73,6 +74,12 @@ def main() -> int:
             a = _get_acc(env_idx)
             a["reward_sum"] += reward
             a["steps"] += 1
+
+            obj_dict = row.get("objective", {})
+            for k, v in obj_dict.items():
+                val = _as_float(v)
+                if val is not None:
+                    a["objective_dict_sums"][k] = a["objective_dict_sums"].get(k, 0.0) + val
 
             # objective_costs: list of floats
             obj = row.get("objective_costs", None)
@@ -116,6 +123,11 @@ def main() -> int:
                     for j, v in enumerate(a["objective_costs_sum"].tolist()):
                         out_row[f"objective_costs_sum_{j}"] = float(v)
                         out_row[f"objective_costs_mean_{j}"] = float(v) / max(steps, 1)
+
+                for k, v in a["objective_dict_sums"].items():
+                    k_safe = k.replace("/", "_")
+                    out_row[f"{k_safe}_sum"] = float(v)
+                    out_row[f"{k_safe}_mean"] = float(v) / max(steps, 1)
                 if a["constraint_costs_sum"] is not None:
                     for j, v in enumerate(a["constraint_costs_sum"].tolist()):
                         out_row[f"constraint_costs_sum_{j}"] = float(v)
@@ -135,6 +147,7 @@ def main() -> int:
                 a["objective_costs_sum"] = None
                 a["constraint_costs_sum"] = None
                 a["pfe_ok_steps"] = 0
+                a["objective_dict_sums"] = {}
 
     print(f"Wrote {out_csv}")
     return 0

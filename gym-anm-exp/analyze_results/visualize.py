@@ -11,6 +11,14 @@ import sys
 import time
 import argparse
 import fcntl
+import faulthandler
+faulthandler.enable()
+import multiprocessing
+if hasattr(multiprocessing, "set_start_method"):
+    try:
+        multiprocessing.set_start_method("fork", force=True)
+    except Exception:
+        pass
 import numpy as np
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
@@ -39,7 +47,7 @@ def wait_for_keypress(step_mode):
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
-        tty.setraw(fd)
+        tty.setcbreak(fd)
         # Clear any buffered input before reading
         import fcntl, os
         fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
@@ -284,14 +292,38 @@ def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=F
     """Visualize a trained agent."""
 
     # --- Load model ---
-    model = algo.load(os.path.join(path, 'best_model'))
-
-    # --- Build a fresh VecEnv with correct wrappers applied BEFORE vectorization ---
+    import zipfile
+    import torch
+    
+    # We load the weights manually to bypass Stable-Baselines3's cloudpickle
+    # loading of the config 'data', which causes Python 3.14 to segfault 
+    # when unpickling functions built in older Python versions.
+    # Build a fresh VecEnv with correct wrappers applied BEFORE vectorization
     env = make_env(ENV_ID, os.path.join(path, 'training_vec_env'), wrappers=True)
-
+    model = algo("MlpPolicy", env, device="auto", verbose=0)
+    zip_path = os.path.join(path, 'best_model.zip')
+    
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        with archive.open("policy.pth") as f:
+            tensors = torch.load(f, map_location=model.device, weights_only=False)
+            
+    model.policy.load_state_dict(tensors)
     # --- Unwrap to the base ANM env for rendering / inspection ---
     anm_env = get_anm_env(env)
 
+    # --- Reset: Gymnasium returns (obs, info) ---
+    reset_result = env.reset()
+    if isinstance(reset_result, tuple):
+        obs, _ = reset_result
+    else:
+        obs = reset_result  # old Gym / SB3 VecEnv returns obs directly
+
+    print("\nInitializing web server...")
+    print_env_info(anm_env)
+    
+    # Render FIRST before replacing sys.stdout to prevent multiprocessing segfaults/pickling errors
+    anm_env.render()
+    
     # --- Logging setup ---
     log_filename = os.path.join(path, f'visualization_log_{time.strftime("%Y%m%d_%H%M%S")}.txt')
     log_file = open(log_filename, 'w')
@@ -315,21 +347,6 @@ def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=F
     origin_stdout = sys.stdout
     sys.stdout = Output(log_file, print_to_console=print_steps)
 
-    print()
-    print("IMPORTANT: gym-anm environments render in a BROWSER")
-    print("Running on http://127.0.0.1:8050/")
-    time.sleep(1)
-
-    # --- Reset: Gymnasium returns (obs, info) ---
-    reset_result = env.reset()
-    if isinstance(reset_result, tuple):
-        obs, _ = reset_result
-    else:
-        obs = reset_result  # old Gym / SB3 VecEnv returns obs directly
-
-    print("\nInitializing web server...")
-    print_env_info(anm_env)
-    anm_env.render()
     print("\nStarting agent interaction...")
 
     done, state = False, None
@@ -359,7 +376,7 @@ def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=F
                     continue
                 elif key == 'i':
                     print("\n" + "="*80)
-                    print_obs(obs[0], anm_env)
+                    print_obs(obs[0], anm_env, no_mean)
                     print("="*80)
                     continue  # Don't step, just show info and wait for next key
             else:
@@ -397,7 +414,7 @@ def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=F
 
 
 
-def print_obs(obs, anm_env):
+def print_obs(obs, anm_env, no_mean):
     """Print a breakdown of the agent's observation vector."""
     obs_flat = obs.flatten()
     sim = anm_env.simulator

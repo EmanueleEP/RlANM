@@ -166,10 +166,17 @@ class BCP_base(ANMEnv):
         # start penalizing when battery SoC is above the following MWh to discourage hoarding / near-full saturation
         SOC_CEILING_MWH = 90.0
 
+        W_Q_MAGNITUDE = 0.005   # penalità per |Q| totale (MVAr * h)
+
         curtailment_mwh = curtailment_mw * delta_t_h
         slack_import_mwh = slack_import_mw * delta_t_h
         slack_export_mwh = slack_export_mw * delta_t_h
         cycle_mwh = abs(battery_p) * delta_t_h
+        # Reactive power magnitude penalty (discourages unnecessary Q injection/absorption)
+        # Sum |Q| over all controllable devices (skip slack, device 0)
+        controllable_q_ids = [i for i in device_ids if getattr(device_data[i], "dev_type", None) in (2, 3)]
+        total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
+        q_magnitude_mvarh = total_q_mvar * delta_t_h
         soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh)
         soc_ceiling_excess_mwh = max(0.0, battery_soc_mwh - SOC_CEILING_MWH)
 
@@ -180,10 +187,11 @@ class BCP_base(ANMEnv):
             + W_CYCLE * cycle_mwh
             + W_SOC_RESERVE * soc_reserve_shortfall_mwh
             + W_SOC_CEILING * soc_ceiling_excess_mwh
+            + W_Q_MAGNITUDE * q_magnitude_mvarh
         )
 
         info["objective_costs"] = np.array(
-            [curtailment_mwh, slack_import_mwh, slack_export_mwh, cycle_mwh, soc_reserve_shortfall_mwh, soc_ceiling_excess_mwh],
+            [curtailment_mwh, slack_import_mwh, slack_export_mwh, cycle_mwh, soc_reserve_shortfall_mwh, soc_ceiling_excess_mwh, q_magnitude_mvarh],
             dtype=np.float32,
         )
         info["objective/cost_curtailment_mwh"] = float(curtailment_mwh)
@@ -195,6 +203,7 @@ class BCP_base(ANMEnv):
         info["objective/slack_p_mw"] = float(slack_p)
         info["objective/curtailment_mw"] = float(curtailment_mw)
         info["objective/battery_soc_mwh"] = float(battery_soc_mwh)
+        info["objective/cost_q_magnitude_mvarh"] = float(q_magnitude_mvarh)
 
         self.year_count = (self.date - self.date_init).days // 365
 
