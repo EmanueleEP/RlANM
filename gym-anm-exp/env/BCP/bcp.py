@@ -83,9 +83,10 @@ class BCP_base(ANMEnv):
         dev_p = np.array([dev_p_dict.get(i, 0.0) for i in device_ids], dtype=np.float32)
         dev_q = np.array([dev_q_dict.get(i, 0.0) for i in device_ids], dtype=np.float32)
 
-        device_type = np.array(
-            [getattr(device_data[i], "dev_type", 1) for i in device_ids], dtype=np.int32
-        )
+        device_type_names = [type(device_data[i]).__name__ for i in device_ids]
+        # Map back to integer for violation loops: 0=Load, 1=Classical, 2=Renewable, 3=Storage
+        type_mapping = {"Load": 0, "ClassicalGen": 1, "RenewableGen": 2, "StorageUnit": 3}
+        device_type = np.array([type_mapping.get(t, 1) for t in device_type_names], dtype=np.int32)
 
         p_max = np.array([device_data[i].p_max for i in device_ids], dtype=np.float32) * base_mva
         p_min = np.array([device_data[i].p_min for i in device_ids], dtype=np.float32) * base_mva
@@ -141,7 +142,7 @@ class BCP_base(ANMEnv):
 
         # Curtailment derived from potential renewable generation (gen_p_max) vs actual injection (dev_p).
         # Only sum devices with DEV_TYPE == 2 (wind/solar).
-        renewable_ids = [i for i in device_ids if getattr(device_data[i], "dev_type", None) == 2]
+        renewable_ids = [i for i in device_ids if type(device_data[i]).__name__ == "RenewableGen"]
         curtailment_mw = 0.0
         for dev_id in renewable_ids:
             if dev_id not in gen_p_max_dict:
@@ -174,7 +175,7 @@ class BCP_base(ANMEnv):
         cycle_mwh = abs(battery_p) * delta_t_h
         # Reactive power magnitude penalty (discourages unnecessary Q injection/absorption)
         # Sum |Q| over all controllable devices (skip slack, device 0)
-        controllable_q_ids = [i for i in device_ids if getattr(device_data[i], "dev_type", None) in (2, 3)]
+        controllable_q_ids = [i for i in device_ids if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")]
         total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
         q_magnitude_mvarh = total_q_mvar * delta_t_h
         soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh)
