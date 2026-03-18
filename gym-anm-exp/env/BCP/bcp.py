@@ -166,7 +166,7 @@ class BCP_base(ANMEnv):
         # start penalizing when battery SoC is above the following MWh to discourage hoarding / near-full saturation
         SOC_CEILING_MWH = 90.0
 
-        W_Q_MAGNITUDE = 0.005   # penalità per |Q| totale (MVAr * h)
+        W_Q_MAGNITUDE = 0.5   # penalità per |Q| totale (MVAr * h)
 
         curtailment_mwh = curtailment_mw * delta_t_h
         slack_import_mwh = slack_import_mw * delta_t_h
