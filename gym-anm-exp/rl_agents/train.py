@@ -77,9 +77,9 @@ def main():
     continuing_training = os.path.exists(AGENT_PATH)
 
     # lagrangian parameters
-    V_TOLERANCE = 0.01
-    PQ_LIMIT = 0.01
-    LAMBDA_LR = 5e-2
+    V_TOLERANCE = 0.00
+    PQ_LIMIT = 0.00
+    LAMBDA_LR = 0.1
 
     # PPO stability parameters
     PPO_LR_INITIAL = 3e-4
@@ -99,7 +99,7 @@ def main():
     FORECAST_HORIZON_STEPS = 0
 
     # Early termination on non-converged power flow
-    PFE_TERMINATE_PENALTY = 100.0
+    PFE_TERMINATE_PENALTY = 20.0
 
 
     def linear_schedule(initial_value: float, final_value: float = 0.0):
@@ -158,7 +158,7 @@ def main():
 
 
 
-    def make_train_env(rank: int = 0, SEED=1, LOG_DIR="", USE_LAGRANGIAN=False, LAMBDA_LR=0, lambda_init_value=None, N_ENVS=1):
+    def make_train_env(rank: int):
         def _init():
             env = gym.make(ENV_ID)
             env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
@@ -185,7 +185,7 @@ def main():
         return _init
 
 
-    def make_eval_env(rank: int = 0, SEED=1, LOG_DIR="", USE_LAGRANGIAN=False, lambda_init_value=None):
+    def make_eval_env(rank: int):
         """Factory that returns a single wrapped eval env (lambda not updated)."""
         def _init():
             env = gym.make(ENV_ID)
@@ -325,19 +325,18 @@ def main():
                     device=device,
                     learning_rate=linear_schedule(PPO_LR_INITIAL, PPO_LR_FINAL),
                 )
-            print("Model created successfully")
+        print("Model created successfully")
     except Exception as e:
         print(f"Error creating/loading model: {e}")
         import traceback
         traceback.print_exc()
         raise
 
-if __name__ == "__main__":
     # Train agent
     print(f"{'Continuing' if continuing_training else 'Starting'} training for {TRAIN_STEPS} steps...")
     try:
-        with ProgressBarManager(TRAIN_STEPS) as c:
-            callbacks += [c]
+        with ProgressBarManager(TRAIN_STEPS) as pbar_callback:
+            callbacks.append(pbar_callback)
             model.learn(total_timesteps=TRAIN_STEPS, 
                        tb_log_name=TB_LOG_NAME, 
                        callback=callbacks,
@@ -398,4 +397,7 @@ if __name__ == "__main__":
         traceback.print_exc()
         raise
 
+
+if __name__ == "__main__":
+    main()
     print('Done!')
