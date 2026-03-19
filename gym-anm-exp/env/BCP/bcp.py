@@ -167,16 +167,16 @@ class BCP_base(ANMEnv):
         W_CURTAIL = 1.0
         W_SLACK_IMPORT = 2.0
         W_SLACK_EXPORT = 0.2
-        W_CYCLE = 0.01
+        W_CYCLE = 0.001
         W_SOC_RESERVE = 2.0
         # start penalizing when battery SoC is below the following MWh to encourage maintaining a reserve for reliability
         SOC_RESERVE_MWH = 5.0
-        W_SOC_CEILING = 2.0
+        W_SOC_CEILING = 0.5
         # start penalizing when battery SoC is above the following MWh to discourage hoarding / near-full saturation
         SOC_CEILING_MWH = 90.0
 
         W_Q_MAGNITUDE = 0.5   # penalità per |Q| totale (MVAr * h)
-        W_BRANCH_OVERLOAD = 2.0  # penalty for branch overload
+        W_BRANCH_OVERLOAD = 10.0  # penalty for branch overload
 
         curtailment_mwh = curtailment_mw * delta_t_h
         slack_import_mwh = slack_import_mw * delta_t_h
