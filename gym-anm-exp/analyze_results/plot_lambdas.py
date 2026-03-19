@@ -77,6 +77,10 @@ def main():
 
     # Smooth the data
     w = min(args.window, len(timesteps))
+    # If the window consumes the whole array, reduce it so we get a line (min 2 points)
+    if w == len(timesteps) and w > 1:
+        w = max(1, len(timesteps) - 1)
+        
     smooth_t = timesteps[w-1:] if w > 1 else timesteps
     smooth_lv = moving_average(lambda_v, w)
     smooth_lp = moving_average(lambda_p, w)
@@ -85,21 +89,22 @@ def main():
     # Plot
     fig, ax = plt.subplots(figsize=(8, 5))
     
-    ax.plot(smooth_t, smooth_lv, label='$\lambda_{voltage}$', color='#e74c3c', linewidth=2)
-    ax.plot(smooth_t, smooth_lp, label='$\lambda_{Active Power (P)}$', color='#3498db', linewidth=2)
-    ax.plot(smooth_t, smooth_lq, label='$\lambda_{Reactive Power (Q)}$', color='#2ecc71', linewidth=2)
-
+    # Use markers for very short runs so single points are visible
+    m = 'o' if len(smooth_t) < 5 else None
+    ax.plot(smooth_t, smooth_lv, label=r'$\lambda_{voltage}$', color='#e74c3c', linewidth=2, marker=m)
+    ax.plot(smooth_t, smooth_lp, label=r'$\lambda_{Active Power (P)}$', color='#3498db', linewidth=2, marker=m)
+    ax.plot(smooth_t, smooth_lq, label=r'$\lambda_{Reactive Power (Q)}$', color='#2ecc71', linewidth=2, marker=m)
     ax.set_title("Evolution of Lagrangian Multipliers (Penalties)")
     ax.set_xlabel("Training Steps (Millions)")
-    ax.set_ylabel("Penalty Multiplier Value ($\lambda$)")
-    ax.grid(True, linestyle="--", alpha=0.7)
-    ax.legend(loc='upper left')
-
-    # Add a note explaining what this means
-    plt.figtext(0.5, 0.01, 
-                "Rising $\lambda$ indicates the agent is violating constraints and the penalty is increasing.\n"
-                "Flat $\lambda$ indicates the agent has learned to respect the constraint completely.", 
-                ha="center", fontsize=9, style='italic', color='grey')
+    ax.set_ylabel(r"Penalty Multiplier Value ($\lambda$)")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    
+    # Add a note explaining lambda behavior
+    plt.figtext(0.15, 0.02, 
+                r"Rising $\lambda$ indicates the agent is violating constraints and the penalty is increasing." + "\n" +
+                r"Flat $\lambda$ indicates the agent has learned to respect the constraint completely.",
+                fontsize=9, style='italic', bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
 
     plt.tight_layout()
     # Adjust bottom to make room for text

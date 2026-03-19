@@ -176,7 +176,7 @@ class BCP_base(ANMEnv):
         SOC_CEILING_MWH = 90.0
 
         W_Q_MAGNITUDE = 0.5   # penalità per |Q| totale (MVAr * h)
-        W_BRANCH_OVERLOAD = 10.0  # penalty for branch overload
+        W_BRANCH_OVERLOAD = 2.0  # penalty for branch overload
 
         curtailment_mwh = curtailment_mw * delta_t_h
         slack_import_mwh = slack_import_mw * delta_t_h
