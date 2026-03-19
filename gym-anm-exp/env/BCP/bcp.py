@@ -119,6 +119,14 @@ class BCP_base(ANMEnv):
         v_min = np.array([getattr(b, 'v_min', 0.9) for b in bus_objects], dtype=float)
         v_violation = np.maximum(0, bus_v - v_max) + np.maximum(0, v_min - bus_v)
 
+        branch_s_dict = full_state.get("branch_s", {}).get("MVA", {})
+        branch_ids = sorted(self.simulator.branches.keys())
+        branch_violation = 0.0
+        for br_id in branch_ids:
+            s_mva = abs(float(branch_s_dict.get(br_id, 0.0)))
+            s_max = self.simulator.branches[br_id].rate * base_mva
+            branch_violation += max(0.0, s_mva - s_max)
+
         info["constraint_costs"] = np.array([
             np.max(v_violation) if len(v_violation) > 0 else 0.0,
             np.max(p_violation) / base_mva if len(p_violation) > 0 else 0.0,
@@ -168,11 +176,13 @@ class BCP_base(ANMEnv):
         SOC_CEILING_MWH = 90.0
 
         W_Q_MAGNITUDE = 0.5   # penalità per |Q| totale (MVAr * h)
+        W_BRANCH_OVERLOAD = 10.0  # penalty for branch overload
 
         curtailment_mwh = curtailment_mw * delta_t_h
         slack_import_mwh = slack_import_mw * delta_t_h
         slack_export_mwh = slack_export_mw * delta_t_h
         cycle_mwh = abs(battery_p) * delta_t_h
+        branch_overload_mwh = branch_violation * delta_t_h
         # Reactive power magnitude penalty (discourages unnecessary Q injection/absorption)
         # Sum |Q| over all controllable devices (skip slack, device 0)
         controllable_q_ids = [i for i in device_ids if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")]
@@ -189,10 +199,11 @@ class BCP_base(ANMEnv):
             + W_SOC_RESERVE * soc_reserve_shortfall_mwh
             + W_SOC_CEILING * soc_ceiling_excess_mwh
             + W_Q_MAGNITUDE * q_magnitude_mvarh
+            + W_BRANCH_OVERLOAD * branch_overload_mwh
         )
 
         info["objective_costs"] = np.array(
-            [curtailment_mwh, slack_import_mwh, slack_export_mwh, cycle_mwh, soc_reserve_shortfall_mwh, soc_ceiling_excess_mwh, q_magnitude_mvarh],
+            [curtailment_mwh, slack_import_mwh, slack_export_mwh, cycle_mwh, soc_reserve_shortfall_mwh, soc_ceiling_excess_mwh, q_magnitude_mvarh, branch_overload_mwh],
             dtype=np.float32,
         )
         info["objective/cost_curtailment_mwh"] = float(curtailment_mwh)

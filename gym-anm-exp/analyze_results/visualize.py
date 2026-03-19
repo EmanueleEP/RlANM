@@ -237,7 +237,7 @@ def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=
             if branch_s is not None and 'MVA' in branch_s:
                 for branch_id, branch in simulator.branches.items():
                     s_mva = branch_s['MVA'].get(branch_id, 0)
-                    status = "OVERLOAD" if s_mva > branch.rate * simulator.baseMVA else "OK"
+                    status = "OVERLOAD" if abs(s_mva) > branch.rate * simulator.baseMVA else "OK"
                     print(f"  Branch {branch_id}: S={s_mva:.3f} MVA"
                           f" (limit={branch.rate * simulator.baseMVA:.3f} MVA) - status: {status}")
 
