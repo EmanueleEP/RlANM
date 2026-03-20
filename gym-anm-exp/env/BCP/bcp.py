@@ -121,17 +121,35 @@ class BCP_base(ANMEnv):
 
         branch_s_dict = full_state.get("branch_s", {}).get("MVA", {})
         branch_ids = sorted(self.simulator.branches.keys())
-        branch_violation = 0.0
+        branch_overload_mva_sum = 0.0
+        branch_overload_mva_max = 0.0
         for br_id in branch_ids:
             s_mva = abs(float(branch_s_dict.get(br_id, 0.0)))
             s_max = self.simulator.branches[br_id].rate * base_mva
-            branch_violation += max(0.0, s_mva - s_max)
+            overload_mva = max(0.0, s_mva - s_max)
+            branch_overload_mva_sum += overload_mva
+            branch_overload_mva_max = max(branch_overload_mva_max, overload_mva)
 
-        info["constraint_costs"] = np.array([
-            np.max(v_violation) if len(v_violation) > 0 else 0.0,
-            np.max(p_violation) / base_mva if len(p_violation) > 0 else 0.0,
-            np.max(q_violation) / base_mva if len(q_violation) > 0 else 0.0,
-        ], dtype=np.float32)
+        # Constraint costs used by LagrangianWrapper.
+        # IMPORTANT: `p_violation` historically measured device active power limit violations (notably the slack).
+        # For grid-feasibility, we also need to include branch thermal overloads (|S| > rate).
+        # We combine them in the "P" constraint channel so existing (3,) lambda checkpoints remain compatible.
+        p_violation_pu_max = float(np.max(p_violation) / base_mva) if len(p_violation) > 0 else 0.0
+        branch_overload_pu_max = float(branch_overload_mva_max / base_mva) if base_mva else 0.0
+        combined_p_constraint = max(p_violation_pu_max, branch_overload_pu_max)
+
+        q_violation_pu_max = float(np.max(q_violation) / base_mva) if len(q_violation) > 0 else 0.0
+
+        info["constraint_costs"] = np.array(
+            [
+                np.max(v_violation) if len(v_violation) > 0 else 0.0,
+                combined_p_constraint,
+                q_violation_pu_max,
+            ],
+            dtype=np.float32,
+        )
+        info["constraint/p_violation_pu_max"] = p_violation_pu_max
+        info["constraint/branch_overload_pu_max"] = branch_overload_pu_max
         info["pfe_converged"] = bool(getattr(self.simulator, "pfe_converged", True))
 
 
@@ -182,7 +200,8 @@ class BCP_base(ANMEnv):
         slack_import_mwh = slack_import_mw * delta_t_h
         slack_export_mwh = slack_export_mw * delta_t_h
         cycle_mwh = abs(battery_p) * delta_t_h
-        branch_overload_mwh = branch_violation * delta_t_h
+        # Branch overload is expressed as MVA*h for consistency with other energy-like objective terms.
+        branch_overload_mwh = branch_overload_mva_sum * delta_t_h
         # Reactive power magnitude penalty (discourages unnecessary Q injection/absorption)
         # Sum |Q| over all controllable devices (skip slack, device 0)
         controllable_q_ids = [i for i in device_ids if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")]
@@ -216,6 +235,7 @@ class BCP_base(ANMEnv):
         info["objective/curtailment_mw"] = float(curtailment_mw)
         info["objective/battery_soc_mwh"] = float(battery_soc_mwh)
         info["objective/cost_q_magnitude_mvarh"] = float(q_magnitude_mvarh)
+        info["objective/cost_branch_overload_mvah"] = float(branch_overload_mwh)
 
         self.year_count = (self.date - self.date_init).days // 365
 

@@ -25,8 +25,10 @@ class BCP(BCP_base):
         self.P_maxs = _get_gen_time_series(0.5, 123)
         
         # Initial battery SoC configuration (in MWh)
-        # This could be made configurable or read from a config file
-        self.initial_battery_soc_mwh = 1.0
+        # Start at 50% SoC by default so the agent can learn both charge and discharge behavior.
+        battery_dev_id = 3
+        soc_max_mwh = float(self.simulator.devices[battery_dev_id].soc_max) * float(self.simulator.baseMVA)
+        self.initial_battery_soc_mwh = 0.5 * soc_max_mwh
 
         # # load from file
         # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)
@@ -261,4 +263,3 @@ if __name__ == "__main__":
         time.sleep(0.5)
 
     print("Done with {} steps in {} seconds!".format(T, time.time() - start))
-

@@ -135,6 +135,7 @@ class StepLoggerCallback(BaseCallback):
                 "done": _to_jsonable(done_i),
                 "pfe_converged": _to_jsonable(info_i.get("pfe_converged", None)),
                 "constraint_costs": _to_jsonable(info_i.get("constraint_costs", None)),
+                "constraint": _to_jsonable({k: v for k, v in info_i.items() if str(k).startswith("constraint/")}),
                 "objective_costs": _to_jsonable(info_i.get("objective_costs", None)),
                 "objective": _to_jsonable({k: v for k, v in info_i.items() if str(k).startswith("objective/")}),
                 "lagrangian": _to_jsonable({k: v for k, v in info_i.items() if str(k).startswith("lagrangian/")}),
