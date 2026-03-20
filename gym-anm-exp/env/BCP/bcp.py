@@ -26,6 +26,10 @@ class BCP_base(ANMEnv):
         network_spec=network_default,
     ):
         super().__init__(network_spec, observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping, seed)
+        # If False, branch overloads are not included in the Lagrangian constraint channel.
+        # They are still logged via constraint/branch_overload_pu_max and can still be
+        # penalized in the objective (see W_BRANCH_OVERLOAD below).
+        self.include_branch_overload_in_constraints = True
         self.network_specs = self.simulator.get_rendering_specs()
         self.timestep_length = dt.timedelta(minutes=int(60 * delta_t))
         self.date = None
@@ -131,12 +135,15 @@ class BCP_base(ANMEnv):
             branch_overload_mva_max = max(branch_overload_mva_max, overload_mva)
 
         # Constraint costs used by LagrangianWrapper.
-        # IMPORTANT: `p_violation` historically measured device active power limit violations (notably the slack).
+        # IMPORTANT: p_violation historically measured device active power limit violations (notably the slack).
         # For grid-feasibility, we also need to include branch thermal overloads (|S| > rate).
-        # We combine them in the "P" constraint channel so existing (3,) lambda checkpoints remain compatible.
+        # We combine them in the P constraint channel so existing (3,) lambda checkpoints remain compatible.
         p_violation_pu_max = float(np.max(p_violation) / base_mva) if len(p_violation) > 0 else 0.0
         branch_overload_pu_max = float(branch_overload_mva_max / base_mva) if base_mva else 0.0
-        combined_p_constraint = max(p_violation_pu_max, branch_overload_pu_max)
+        if getattr(self, "include_branch_overload_in_constraints", True):
+            combined_p_constraint = max(p_violation_pu_max, branch_overload_pu_max)
+        else:
+            combined_p_constraint = p_violation_pu_max
 
         q_violation_pu_max = float(np.max(q_violation) / base_mva) if len(q_violation) > 0 else 0.0
 
@@ -200,7 +207,7 @@ class BCP_base(ANMEnv):
         slack_import_mwh = slack_import_mw * delta_t_h
         slack_export_mwh = slack_export_mw * delta_t_h
         cycle_mwh = abs(battery_p) * delta_t_h
-        # Branch overload is expressed as MVA*h for consistency with other energy-like objective terms.
+        # Branch overload is expressed as MVAh for consistency with other energy-like objective terms.
         branch_overload_mwh = branch_overload_mva_sum * delta_t_h
         # Reactive power magnitude penalty (discourages unnecessary Q injection/absorption)
         # Sum |Q| over all controllable devices (skip slack, device 0)

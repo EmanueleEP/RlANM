@@ -28,7 +28,7 @@ class BCP(BCP_base):
         # Start at 50% SoC by default so the agent can learn both charge and discharge behavior.
         battery_dev_id = 3
         soc_max_mwh = float(self.simulator.devices[battery_dev_id].soc_max) * float(self.simulator.baseMVA)
-        self.initial_battery_soc_mwh = 0.5 * soc_max_mwh
+        self.initial_battery_soc_mwh = 0.01 * soc_max_mwh
 
         # # load from file
         # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)
@@ -72,22 +72,16 @@ class BCP(BCP_base):
         # Energy storage unit
         storage_device_ids = [3]
         for idx, dev_id in enumerate(storage_device_ids):
-            # Use configured initial SoC (in MWh)
-            initial_soc_mwh = self.initial_battery_soc_mwh
-            
-            # Convert to per unit for internal state
-            soc_max_mwh = self.simulator.devices[dev_id].soc_max * self.simulator.baseMVA
-            initial_soc_pu = initial_soc_mwh / soc_max_mwh if soc_max_mwh > 0 else 0.0
-            
-            # Validate SoC is within bounds
-            soc_min = self.simulator.devices[dev_id].soc_min
-            soc_max = self.simulator.devices[dev_id].soc_max
-            initial_soc_pu = np.clip(initial_soc_pu, soc_min, soc_max)
-            
-            state[2 * n_dev + idx] = initial_soc_pu  # store SoC in p.u. in state vector
-            
-            # IMPORTANT: Also set the initial SoC in the simulator device
-            self.simulator.devices[dev_id].soc = initial_soc_pu  # p.u. as expected by device
+            # IMPORTANT: `gym-anm` expects SoC in the init_state vector in **MWh**
+            # (Simulator.reset() divides by baseMVA to convert to p.u.).
+            initial_soc_mwh = float(self.initial_battery_soc_mwh)
+
+            soc_min_mwh = float(self.simulator.devices[dev_id].soc_min) * float(self.simulator.baseMVA)
+            soc_max_mwh = float(self.simulator.devices[dev_id].soc_max) * float(self.simulator.baseMVA)
+            if soc_max_mwh > 0:
+                initial_soc_mwh = float(np.clip(initial_soc_mwh, soc_min_mwh, soc_max_mwh))
+
+            state[2 * n_dev + idx] = initial_soc_mwh  # SoC in MWh
 
         return state
 
@@ -118,31 +112,6 @@ class BCP(BCP_base):
         # Reset the time of the day based on the auxiliary variable.
         new_date = self.date + self.state[-1] * self.timestep_length
         super().reset_date(new_date)
-        
-        # IMPORTANT: Initialize battery SoC in the simulator state AFTER parent reset
-        # Use configured initial SoC
-        storage_device_ids = [3]
-        for idx, dev_id in enumerate(storage_device_ids):
-            # Use configured initial SoC (in MWh)
-            initial_soc_mwh = self.initial_battery_soc_mwh
-            
-            # Set the SoC in the simulator's state (use MWh value directly)
-            if hasattr(self.simulator, 'state') and 'des_soc' in self.simulator.state:
-                des_soc_mwh = self.simulator.state['des_soc']['MWh']
-                if dev_id in des_soc_mwh:
-                    des_soc_mwh[dev_id] = initial_soc_mwh
-            
-            # Also set device SoC in per unit (as expected by the device)
-            soc_max_mwh = self.simulator.devices[dev_id].soc_max * self.simulator.baseMVA
-            initial_soc_pu = initial_soc_mwh / soc_max_mwh if soc_max_mwh > 0 else 0.0
-            
-            # Validate SoC is within bounds
-            soc_min = self.simulator.devices[dev_id].soc_min
-            soc_max = self.simulator.devices[dev_id].soc_max
-            initial_soc_pu = np.clip(initial_soc_pu, soc_min, soc_max)
-            
-            # Set device SoC in p.u.
-            self.simulator.devices[dev_id].soc = initial_soc_pu
 
         return obs, info
 

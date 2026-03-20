@@ -123,6 +123,12 @@ class EvalCallback(EventCallback):
         self.evaluation_discounted_results = []
         self.evaluations_timesteps = []
         self.evaluations_length = []
+        self.evaluations_constraint_any = []
+        self.evaluations_constraint_v = []
+        self.evaluations_constraint_p = []
+        self.evaluations_constraint_q = []
+        self.evaluations_constraint_branch_overload = []
+        self.evaluations_pfe_nonconverged = []
 
     def _init_callback(self) -> None:
         # Does not work in some corner cases, where the wrapper is not the same
@@ -182,13 +188,14 @@ class EvalCallback(EventCallback):
 
             self._sync_lambda()
 
-            episode_rewards, episode_lengths, episode_discounted_rewards = evaluate_policy(
+            episode_rewards, episode_lengths, episode_discounted_rewards, constraint_stats = evaluate_policy(
                 self.model,
                 self.eval_env,
                 n_eval_episodes=self.n_eval_episodes,
                 render=self.render,
                 deterministic=self.deterministic,
                 return_episode_rewards=True,
+                return_constraint_stats=True,
             )
 
             if self.log_path is not None:
@@ -196,12 +203,25 @@ class EvalCallback(EventCallback):
                 self.evaluations_results.append(episode_rewards)
                 self.evaluation_discounted_results.append(episode_discounted_rewards)
                 self.evaluations_length.append(episode_lengths)
+                # Constraint stats are stored as per-episode step counts.
+                self.evaluations_constraint_any.append(constraint_stats.get("any", []))
+                self.evaluations_constraint_v.append(constraint_stats.get("v", []))
+                self.evaluations_constraint_p.append(constraint_stats.get("p", []))
+                self.evaluations_constraint_q.append(constraint_stats.get("q", []))
+                self.evaluations_constraint_branch_overload.append(constraint_stats.get("branch_overload", []))
+                self.evaluations_pfe_nonconverged.append(constraint_stats.get("pfe_nonconverged", []))
                 np.savez(
                     self.log_path,
                     timesteps=self.evaluations_timesteps,
                     results=self.evaluations_results,
                     discounted_results=self.evaluation_discounted_results,
                     ep_lengths=self.evaluations_length,
+                    constraint_any_steps=self.evaluations_constraint_any,
+                    constraint_v_steps=self.evaluations_constraint_v,
+                    constraint_p_steps=self.evaluations_constraint_p,
+                    constraint_q_steps=self.evaluations_constraint_q,
+                    branch_overload_steps=self.evaluations_constraint_branch_overload,
+                    pfe_nonconverged_steps=self.evaluations_pfe_nonconverged,
                 )
 
             mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
@@ -217,6 +237,13 @@ class EvalCallback(EventCallback):
             self.logger.record("eval/mean_ep_reward", float(mean_reward))
             self.logger.record("eval/mean_ep_length", mean_ep_length)
             self.logger.record("eval/mean_ep_discounted_reward", float(mean_discounted_reward))
+            try:
+                any_frac = np.mean([a / max(1, l) for a, l in zip(constraint_stats.get("any", []), episode_lengths)])
+                br_frac = np.mean([a / max(1, l) for a, l in zip(constraint_stats.get("branch_overload", []), episode_lengths)])
+                self.logger.record("eval/constraint_any_frac", float(any_frac))
+                self.logger.record("eval/branch_overload_frac", float(br_frac))
+            except Exception:
+                pass
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose > 0:

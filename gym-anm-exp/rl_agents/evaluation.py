@@ -30,7 +30,7 @@ def _get_gamma(env: Union[gym.Env, VecEnv]) -> float:
         # Unwrap to find gamma
         while hasattr(inner_env, 'env'):
             if hasattr(inner_env, 'gamma'):
-                return inner_inner.gamma
+                return inner_env.gamma
             inner_env = inner_env.env
         # Check unwrapped env
         if hasattr(inner_env, 'gamma'):
@@ -49,6 +49,7 @@ def evaluate_policy(
     callback: Optional[Callable] = None,
     reward_threshold: Optional[float] = None,
     return_episode_rewards: bool = False,
+    return_constraint_stats: bool = False,
 ) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
     """
     Runs policy for ``n_eval_episodes`` episodes and returns average reward.
@@ -66,8 +67,10 @@ def evaluate_policy(
         this will raise an error if the performance is not met
     :param return_episode_rewards: If True, a list of reward per episode
         will be returned instead of the mean..
+    :param return_constraint_stats: If True, also returns per-episode constraint/violation counters
+        derived from the env `info` dict (works with or without LagrangianWrapper).
     :return: Mean reward per episode, std of reward per episode, mean discounted reward per episode, std of discounted
-        reward per episode. Returns ([float], [int], [float]) when ``return_episode_rewards`` is True
+        reward per episode. Returns ([float], [int], [float]) when ``return_episode_rewards`` is True.
     """
     if isinstance(env, VecEnv):
         assert env.num_envs == 1, "You must pass only one environment when using this function"
@@ -76,6 +79,8 @@ def evaluate_policy(
     gamma = _get_gamma(env)
 
     episode_rewards, episode_lengths, episode_discounted_rewards = [], [], []
+    constraint_any_steps, constraint_v_steps, constraint_p_steps, constraint_q_steps = [], [], [], []
+    branch_overload_steps, pfe_nonconverged_steps = [], []
     for i in range(n_eval_episodes):
         # Avoid double reset, as VecEnv are reset automatically
         if not isinstance(env, VecEnv) or i == 0:
@@ -84,6 +89,9 @@ def evaluate_policy(
         episode_reward = 0.0
         episode_discounted_reward = 0.0
         episode_length = 0
+        any_steps = v_steps = p_steps = q_steps = 0
+        br_steps = 0
+        pfe_steps = 0
         while not done:
             action, state = model.predict(obs, state=state, deterministic=deterministic)
             obs, rewards, dones, infos = env.step(action)
@@ -95,6 +103,35 @@ def evaluate_policy(
 
             episode_reward += reward
             episode_discounted_reward += reward * (gamma ** episode_length)  # <-- USE EXTRACTED GAMMA
+
+            # --- Constraint/violation accounting (optional) ---
+            if return_constraint_stats:
+                info0 = infos[0] if isinstance(infos, (list, tuple)) and infos else (infos or {})
+                try:
+                    if isinstance(info0, dict):
+                        c = info0.get("constraint_costs", None)
+                        if c is not None:
+                            c = np.asarray(c, dtype=float).flatten()
+                            if c.size >= 3:
+                                if float(c[0]) > 0.0:
+                                    v_steps += 1
+                                if float(c[1]) > 0.0:
+                                    p_steps += 1
+                                if float(c[2]) > 0.0:
+                                    q_steps += 1
+                                if (float(c[0]) > 0.0) or (float(c[1]) > 0.0) or (float(c[2]) > 0.0):
+                                    any_steps += 1
+
+                        br = info0.get("constraint/branch_overload_pu_max", None)
+                        if br is not None and float(br) > 0.0:
+                            br_steps += 1
+
+                        pfe = info0.get("pfe_converged", None)
+                        if pfe is False:
+                            pfe_steps += 1
+                except Exception:
+                    pass
+
             if callback is not None:
                 callback(locals(), globals())
             episode_length += 1
@@ -103,6 +140,13 @@ def evaluate_policy(
         episode_rewards.append(episode_reward)
         episode_lengths.append(episode_length)
         episode_discounted_rewards.append(episode_discounted_reward)
+        if return_constraint_stats:
+            constraint_any_steps.append(int(any_steps))
+            constraint_v_steps.append(int(v_steps))
+            constraint_p_steps.append(int(p_steps))
+            constraint_q_steps.append(int(q_steps))
+            branch_overload_steps.append(int(br_steps))
+            pfe_nonconverged_steps.append(int(pfe_steps))
     mean_reward = np.mean(episode_rewards)
     mean_discounted_reward = np.mean(episode_discounted_rewards)
     std_reward = np.std(episode_rewards)
@@ -110,5 +154,15 @@ def evaluate_policy(
     if reward_threshold is not None:
         assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
     if return_episode_rewards:
+        if return_constraint_stats:
+            stats = {
+                "any": constraint_any_steps,
+                "v": constraint_v_steps,
+                "p": constraint_p_steps,
+                "q": constraint_q_steps,
+                "branch_overload": branch_overload_steps,
+                "pfe_nonconverged": pfe_nonconverged_steps,
+            }
+            return episode_rewards, episode_lengths, episode_discounted_rewards, stats
         return episode_rewards, episode_lengths, episode_discounted_rewards
     return mean_reward, std_reward, mean_discounted_reward, std_discounted_reward

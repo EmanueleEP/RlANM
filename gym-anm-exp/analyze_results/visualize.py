@@ -74,11 +74,12 @@ def wait_for_keypress(step_mode):
 
 def get_anm_env(env):
     # Unwrap a (possibly vectorized) env to reach the base ANM environment
-    # Handle VecEnv
-    if hasattr(env, 'envs'):
-        base_env = env.envs[0]
-    else:
-        base_env = env
+    base_env = env
+    # Handle VecNormalize / VecEnv wrappers
+    while hasattr(base_env, "venv"):
+        base_env = base_env.venv
+    if hasattr(base_env, "envs"):
+        base_env = base_env.envs[0]
     # Unwrap Monitor / Gymnasium wrappers
     while hasattr(base_env, "env"):
         base_env = base_env.env
@@ -155,6 +156,7 @@ def print_env_info(anm_env):
 
 def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=None):
     """Print detailed information about the current step."""
+    info0 = info[0] if isinstance(info, (list, tuple)) and info else (info or {})
     print("\n")
     print(f"STEP {step}")
 
@@ -241,6 +243,41 @@ def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=
                     print(f"  Branch {branch_id}: S={s_mva:.3f} MVA"
                           f" (limit={branch.rate * simulator.baseMVA:.3f} MVA) - status: {status}")
 
+    # Extra diagnostics from info dict (available with or without LagrangianWrapper)
+    if isinstance(info0, dict) and info0:
+        constraint_costs = info0.get("constraint_costs", None)
+        if constraint_costs is not None:
+            try:
+                c = np.asarray(constraint_costs, dtype=float).flatten()
+                if c.size >= 3:
+                    print("\nCONSTRAINT COSTS:")
+                    print(f"  cost_v={c[0]:.4f}  cost_p={c[1]:.4f}  cost_q={c[2]:.4f}")
+            except Exception:
+                pass
+
+        br_over = info0.get("constraint/branch_overload_pu_max", None)
+        if br_over is not None:
+            try:
+                print(f"  branch_overload_pu_max={float(br_over):.4f}")
+            except Exception:
+                pass
+
+        # Explain common "strange" mismatches: availability + battery SoC clipping.
+        try:
+            sim = anm_env.simulator
+            # Battery SoC ceiling effect
+            soc_mwh = sim.state.get("des_soc", {}).get("MWh", {}).get(3, None) if sim.state else None
+            soc_max_mwh = float(getattr(sim.devices.get(3), "soc_max", 1.0)) * float(sim.baseMVA)
+            if soc_mwh is not None and soc_max_mwh > 0:
+                if float(soc_mwh) >= soc_max_mwh - 1e-3 and float(action[2]) < -1e-6:
+                    print("  note: battery action clipped by SoC ceiling (battery is full).")
+            # Renewable availability effect
+            gen_p_max = sim.state.get("gen_p_max", {}).get("MW", {}).get(2, None) if sim.state else None
+            if gen_p_max is not None:
+                print(f"  gen_p_max_MW(device 2)={float(gen_p_max):.3f}")
+        except Exception:
+            pass
+
     print(f"\nREWARD: {reward:.4f}")
     print(f"DONE: {done}")
 
@@ -257,7 +294,7 @@ def make_env(env_id, vec_env_path, wrappers=True):
     breaks all battery clipping).
     """
     import gymnasium as gym
-    from stable_baselines3.common.vec_env import DummyVecEnv
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
     # Load the trained lambda so the agent sees the same reward landscape it
     # was trained on.  Falls back to [1, 1, 1] if the file is missing.
@@ -285,7 +322,21 @@ def make_env(env_id, vec_env_path, wrappers=True):
                                     lambda_init=lambda_init)
         return env
 
-    return DummyVecEnv([_init])
+    env = DummyVecEnv([_init])
+
+    # If the model was trained with VecNormalize (default in train.py), load its
+    # running stats so observations match what the policy expects.
+    if vec_env_path and os.path.exists(vec_env_path):
+        try:
+            env = VecNormalize.load(vec_env_path, env)
+            env.training = False
+            # Show true env reward in the logs; keep obs normalization.
+            env.norm_reward = False
+            print(f"[make_env] Loaded VecNormalize stats from: {vec_env_path}")
+        except Exception as e:
+            print(f"[make_env] Warning: could not load VecNormalize stats ({e}). Continuing without VecNormalize.")
+
+    return env
 
 
 def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=False):
@@ -376,7 +427,7 @@ def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=F
                     continue
                 elif key == 'i':
                     print("\n" + "="*80)
-                    print_obs(obs[0], anm_env, no_mean)
+                    print_obs(obs[0], anm_env, no_mean, vec_env=env)
                     print("="*80)
                     continue  # Don't step, just show info and wait for next key
             else:
@@ -414,41 +465,97 @@ def visualize(path, algo, T, sleep_time, print_steps, no_mean=False, step_mode=F
 
 
 
-def print_obs(obs, anm_env, no_mean):
-    """Print a breakdown of the agent's observation vector."""
+def print_obs(obs, anm_env, no_mean, vec_env=None):
+    """Print a breakdown of the agent's observation vector.
+
+    Notes
+    -----
+    - When VecNormalize is enabled, `obs` is *normalized* (what the policy sees).
+      For debugging physical values (MW/MVAr/MWh), we try to also display the
+      unnormalized observation via `VecNormalize.unnormalize_obs`.
+    - For `gym-anm` environments with `observation="state"`, the observation is
+      ordered following `anm_env.obs_values` (dev_p, dev_q, des_soc, gen_p_max, aux, ...).
+    """
     obs_flat = obs.flatten()
     sim = anm_env.simulator
 
-    print("\nAGENT OBSERVATION:")
-    print(f"  Shape: {obs.shape}")
-    if no_mean:
-        print(f"  Min: {obs_flat.min():.4f}, Max: {obs_flat.max():.4f}\n")
+    # Try to recover unnormalized obs (physical units) if VecNormalize is active.
+    obs_un = None
+    if vec_env is not None and hasattr(vec_env, "unnormalize_obs"):
+        try:
+            obs_un = vec_env.unnormalize_obs(obs.reshape(1, -1))[0].flatten()
+        except Exception:
+            try:
+                obs_un = vec_env.unnormalize_obs(obs).flatten()
+            except Exception:
+                obs_un = None
+
+    def _print_stats(name, x):
+        x = np.asarray(x, dtype=float).flatten()
+        print(f"\n{name}:")
+        print(f"  Shape: {tuple(x.shape)}")
+        if x.size == 0:
+            return
+        if no_mean:
+            print(f"  Min: {x.min():.4f}, Max: {x.max():.4f}")
+        else:
+            print(f"  Min: {x.min():.4f}, Max: {x.max():.4f}, Mean: {x.mean():.4f}")
+
+    print("\nAGENT OBSERVATION")
+    _print_stats("  Policy obs (possibly normalized)", obs_flat)
+    if obs_un is not None:
+        _print_stats("  Env obs (VecNormalize unnormalized)", obs_un)
+
+    # Decode the observation vector using the env-provided schema (robust to ordering).
+    schema = getattr(anm_env, "obs_values", None)
+    if not schema:
+        print("\n(obs_values unavailable; cannot decode observation vector reliably.)")
+        return
+
+    def _decode(vec, title):
+        vec = np.asarray(vec, dtype=float).flatten()
+        print(f"\n{title}:")
+        idx = 0
+        for key, ids, unit in schema:
+            n = len(ids)
+            seg = vec[idx : idx + n]
+            idx += n
+
+            unit_str = "" if unit is None else f" {unit}"
+            if key in ("dev_p", "dev_q"):
+                print(f"  {key}{unit_str}:")
+                for dev_id, v in zip(ids, seg):
+                    dev = sim.devices.get(dev_id, None)
+                    dev_name = type(dev).__name__ if dev is not None else "Unknown"
+                    print(f"    Device {dev_id} ({dev_name}): {v:+.4f}{unit_str}")
+            elif key == "des_soc":
+                print(f"  {key}{unit_str}:")
+                for dev_id, v in zip(ids, seg):
+                    dev = sim.devices.get(dev_id, None)
+                    dev_name = type(dev).__name__ if dev is not None else "Unknown"
+                    print(f"    Device {dev_id} ({dev_name}): {v:.4f}{unit_str}")
+            elif key == "gen_p_max":
+                print(f"  {key}{unit_str}:")
+                for dev_id, v in zip(ids, seg):
+                    dev = sim.devices.get(dev_id, None)
+                    dev_name = type(dev).__name__ if dev is not None else "Unknown"
+                    print(f"    Device {dev_id} ({dev_name}): {v:.4f}{unit_str}")
+            elif key == "aux":
+                print("  aux:")
+                for aux_id, v in zip(ids, seg):
+                    print(f"    aux[{aux_id}]: {v:.4f}")
+            else:
+                print(f"  {key}{unit_str}: {seg}")
+
+        if idx != vec.size:
+            print(f"  (warning) decoded {idx} elements but obs has {vec.size}.")
+
+    # Prefer decoding the *unnormalized* observation when available.
+    if obs_un is not None:
+        _decode(obs_un, "Decoded observation (physical units)")
+        _decode(obs_flat, "Decoded observation (policy / normalized)")
     else:
-        print(f"  Min: {obs_flat.min():.4f}, Max: {obs_flat.max():.4f}, Mean: {obs_flat.mean():.4f}\n")
-
-    print("Bus Voltages (p.u. deviation from 1.0):")
-    for i, bus_id in enumerate(sim.buses.keys()):
-        print(f"  Bus {bus_id}: {obs_flat[i]:+.4f}")
-
-    idx = sim.N_bus
-
-    print("\nActive Power (Generators & Storage Units, normalized):")
-    for dev_id, dev in sim.devices.items():
-        if isinstance(dev, Generator) and not dev.is_slack:
-            print(f"  Device {dev_id} ({type(dev).__name__}): {obs_flat[idx]:+.4f}")
-            idx += 1
-        elif isinstance(dev, StorageUnit):
-            print(f"  Device {dev_id} ({type(dev).__name__}): {obs_flat[idx]:+.4f}")
-            idx += 1
-
-    print("\nReactive Power / SoC (Generators & Storage Units, normalized):")
-    for dev_id, dev in sim.devices.items():
-        if isinstance(dev, Generator) and not dev.is_slack:
-            print(f"  Device {dev_id} ({type(dev).__name__}): {obs_flat[idx]:+.4f}")
-            idx += 1
-        elif isinstance(dev, StorageUnit):
-            print(f"  Device {dev_id} ({type(dev).__name__}): {obs_flat[idx]:+.4f}")
-            idx += 1
+        _decode(obs_flat, "Decoded observation")
 
 
 def parse_args():

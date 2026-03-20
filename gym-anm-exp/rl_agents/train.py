@@ -161,6 +161,8 @@ def main():
     def make_train_env(rank: int):
         def _init():
             env = gym.make(ENV_ID)
+            if hasattr(env, "include_branch_overload_in_constraints"):
+                env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
             env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
@@ -189,6 +191,8 @@ def main():
         """Factory that returns a single wrapped eval env (lambda not updated)."""
         def _init():
             env = gym.make(ENV_ID)
+            if hasattr(env, "include_branch_overload_in_constraints"):
+                env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
             env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization

@@ -122,6 +122,8 @@ if __name__ == '__main__':
     def make_train_env(rank: int = 0):
         def _init():
             env = gym.make(ENV_ID)
+            if hasattr(env, "include_branch_overload_in_constraints"):
+                env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
             env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)
@@ -142,6 +144,8 @@ if __name__ == '__main__':
     def make_eval_env(rank: int = 0):
         def _init():
             env = gym.make(ENV_ID)
+            if hasattr(env, "include_branch_overload_in_constraints"):
+                env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
             env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)
