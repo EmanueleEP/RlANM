@@ -196,7 +196,7 @@ class BCP_base(ANMEnv):
         W_SOC_RESERVE = 2.0
         # start penalizing when battery SoC is below the following MWh to encourage maintaining a reserve for reliability
         SOC_RESERVE_MWH = 5.0
-        W_SOC_CEILING = 0.5
+        W_SOC_CEILING = 1
         # start penalizing when battery SoC is above the following MWh to discourage hoarding / near-full saturation
         SOC_CEILING_MWH = 90.0
 
