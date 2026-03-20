@@ -28,7 +28,7 @@ class BCP(BCP_base):
         # Start at 50% SoC by default so the agent can learn both charge and discharge behavior.
         battery_dev_id = 3
         soc_max_mwh = float(self.simulator.devices[battery_dev_id].soc_max) * float(self.simulator.baseMVA)
-        self.initial_battery_soc_mwh = 0.01 * soc_max_mwh
+        self.initial_battery_soc_mwh = 0.5 * soc_max_mwh
 
         # # load from file
         # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)
@@ -74,12 +74,16 @@ class BCP(BCP_base):
         for idx, dev_id in enumerate(storage_device_ids):
             # IMPORTANT: `gym-anm` expects SoC in the init_state vector in **MWh**
             # (Simulator.reset() divides by baseMVA to convert to p.u.).
-            initial_soc_mwh = float(self.initial_battery_soc_mwh)
-
             soc_min_mwh = float(self.simulator.devices[dev_id].soc_min) * float(self.simulator.baseMVA)
             soc_max_mwh = float(self.simulator.devices[dev_id].soc_max) * float(self.simulator.baseMVA)
-            if soc_max_mwh > 0:
-                initial_soc_mwh = float(np.clip(initial_soc_mwh, soc_min_mwh, soc_max_mwh))
+
+            # Randomize initial SoC between 20% and 80% of capacity during training.
+            # This ensures the agent experiences diverse battery states and learns
+            # both charging and discharging strategies.
+            initial_soc_mwh = float(self.np_random.uniform(
+                0.2 * soc_max_mwh, 0.8 * soc_max_mwh
+            ))
+            initial_soc_mwh = float(np.clip(initial_soc_mwh, soc_min_mwh, soc_max_mwh))
 
             state[2 * n_dev + idx] = initial_soc_mwh  # SoC in MWh
 
