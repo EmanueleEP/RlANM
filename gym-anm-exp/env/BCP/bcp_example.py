@@ -7,6 +7,15 @@ from .bcp import BCP_base
 
 profiles_path = "env/BCP/daysHoursPQ.txt"
 
+
+try:
+    from rl_agents.hyperparameters import USE_LAGRANGIAN as _USE_LAGRANGIAN
+except ImportError:
+    _USE_LAGRANGIAN = False
+ 
+_LAMB = 0 if _USE_LAGRANGIAN else 100
+
+
 class BCP(BCP_base):
     """The :code:`BCP-v0` task."""
 
@@ -15,7 +24,7 @@ class BCP(BCP_base):
         K = 1
         delta_t = 0.25  # 15 minutes between timesteps
         gamma = 0.995
-        lamb = 100
+        lamb = _LAMB # penalty weight 
         aux_bounds = np.array([[0, 24 / delta_t - 1]])
         costs_clipping = (1, 100)
         super().__init__(observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping)
@@ -24,12 +33,6 @@ class BCP(BCP_base):
         self.P_loads = _get_load_time_series(0.1, 123)
         self.P_maxs = _get_gen_time_series(0.5, 123)
         
-        # Initial battery SoC configuration (in MWh)
-        # Start at 50% SoC by default so the agent can learn both charge and discharge behavior.
-        battery_dev_id = 3
-        soc_max_mwh = float(self.simulator.devices[battery_dev_id].soc_max) * float(self.simulator.baseMVA)
-        self.initial_battery_soc_mwh = 0.5 * soc_max_mwh
-
         # # load from file
         # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)
         # self.P_loads = P_loads
@@ -77,11 +80,11 @@ class BCP(BCP_base):
             soc_min_mwh = float(self.simulator.devices[dev_id].soc_min) * float(self.simulator.baseMVA)
             soc_max_mwh = float(self.simulator.devices[dev_id].soc_max) * float(self.simulator.baseMVA)
 
-            # Randomize initial SoC between 20% and 80% of capacity during training.
+            # Randomize initial SoC between 1% and 60% of capacity during training.
             # This ensures the agent experiences diverse battery states and learns
             # both charging and discharging strategies.
             initial_soc_mwh = float(self.np_random.uniform(
-                0.2 * soc_max_mwh, 0.8 * soc_max_mwh
+                0.01 * soc_max_mwh, 0.6 * soc_max_mwh
             ))
             initial_soc_mwh = float(np.clip(initial_soc_mwh, soc_min_mwh, soc_max_mwh))
 

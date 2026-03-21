@@ -218,8 +218,8 @@ class BCP_base(ANMEnv):
         controllable_q_ids = [i for i in device_ids if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")]
         total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
         q_magnitude_mvarh = total_q_mvar * delta_t_h
-        soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh)
-        soc_ceiling_excess_mwh = max(0.0, battery_soc_mwh - SOC_CEILING_MWH)
+        soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh) * delta_t_h
+        soc_ceiling_excess_mwh = max(0.0, battery_soc_mwh - SOC_CEILING_MWH) * delta_t
 
         r = r - (
             W_CURTAIL * curtailment_mwh

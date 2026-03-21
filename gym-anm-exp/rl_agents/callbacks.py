@@ -141,19 +141,6 @@ class EvalCallback(EventCallback):
         if self.log_path is not None:
             os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
-    def _sync_lambda(self):
-        # Copy the average lambda from training envs into the eval env"
-        from .wrappers import LagrangianWrapper
-
-        def find_lagrangian(env):
-            inner = env
-            while True:
-                if isinstance(inner, LagrangianWrapper):
-                    return inner
-                if not hasattr(inner, 'env'):
-                    return None
-                inner = inner.env
-
         def unwrap_envs(vec_env):
             inner = vec_env
             while hasattr(inner, "venv"):
@@ -185,8 +172,6 @@ class EvalCallback(EventCallback):
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             # Sync training and eval env if there is VecNormalize
             sync_envs_normalization(self.training_env, self.eval_env)
-
-            self._sync_lambda()
 
             episode_rewards, episode_lengths, episode_discounted_rewards, constraint_stats = evaluate_policy(
                 self.model,

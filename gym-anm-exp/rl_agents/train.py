@@ -78,7 +78,7 @@ def main():
     continuing_training = os.path.exists(AGENT_PATH)
 
     # lagrangian parameters
-    V_TOLERANCE = 0.00
+    V_TOLERANCE = 0.01
     PQ_LIMIT = 0.00
     LAMBDA_LR = 0.1
 
@@ -170,8 +170,12 @@ def main():
             env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
+
             if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
                 env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
+            
+            env = Monitor(env, LOG_DIR)
+
             if USE_LAGRANGIAN:
                 # When using multiple envs with sync callback, disable individual updates (lambda_lr=0)
                 # The callback will handle synchronization and averaging
@@ -193,7 +197,6 @@ def main():
                     w_q=STANDARD_PENALTY_W_Q,
                 )
             env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
-            env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + rank)
             return env
         return _init

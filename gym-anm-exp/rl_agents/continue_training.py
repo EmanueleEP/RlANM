@@ -128,8 +128,12 @@ if __name__ == '__main__':
             env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)
+
             if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
                 env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
+
+            env = Monitor(env, LOG_DIR)
+
             if USE_LAGRANGIAN:
                 effective_lr = 0.0 if (N_ENVS > 1) else LAMBDA_LR
                 env = LagrangianWrapper(
@@ -144,7 +148,6 @@ if __name__ == '__main__':
                     w_q=STANDARD_PENALTY_W_Q,
                 )
             env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
-            env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + rank)
             return env
         return _init
