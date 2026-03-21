@@ -32,6 +32,7 @@ from .callbacks import ProgressBarManager, EvalCallback
 from .utils import parse_args
 from .wrappers import (
     LagrangianWrapper,
+    StandardPenaltyWrapper,
     TimeLimitWrapper,
     NormalizeActionWrapper,
     BatteryClipWrapper,
@@ -135,6 +136,13 @@ if __name__ == '__main__':
                     env, v_tolerance=V_TOLERANCE, pq_limit=PQ_LIMIT,
                     lambda_lr=effective_lr, lambda_init=lambda_init_value,
                 )
+            else:
+                env = StandardPenaltyWrapper(
+                    env,
+                    w_v=STANDARD_PENALTY_W_V,
+                    w_p=STANDARD_PENALTY_W_P,
+                    w_q=STANDARD_PENALTY_W_Q,
+                )
             env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
             env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + rank)
@@ -142,6 +150,7 @@ if __name__ == '__main__':
         return _init
 
     def make_eval_env(rank: int = 0):
+        """Eval env without penalty wrappers — reports pure economic reward."""
         def _init():
             env = gym.make(ENV_ID)
             if hasattr(env, "include_branch_overload_in_constraints"):
@@ -151,11 +160,7 @@ if __name__ == '__main__':
             env = BatteryClipWrapper(env)
             if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
                 env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
-            if USE_LAGRANGIAN:
-                env = LagrangianWrapper(
-                    env, v_tolerance=V_TOLERANCE, pq_limit=PQ_LIMIT,
-                    lambda_lr=0.0, lambda_init=lambda_init_value,
-                )
+            # No penalty wrappers — eval reports raw economic reward
             env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
             env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + 1000 + rank)

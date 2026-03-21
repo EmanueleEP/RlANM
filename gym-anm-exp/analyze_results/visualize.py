@@ -22,9 +22,16 @@ if hasattr(multiprocessing, "set_start_method"):
 import numpy as np
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
-from rl_agents.hyperparameters import ENV_ID, MAX_EVAL_EP_LENGTH  # ADDED MAX_EVAL_EP_LENGTH
+from rl_agents.hyperparameters import (
+    ENV_ID, MAX_EVAL_EP_LENGTH, USE_LAGRANGIAN,
+    STANDARD_PENALTY_W_V, STANDARD_PENALTY_W_P, STANDARD_PENALTY_W_Q,
+)
 from rl_agents.utils import load_visualization_env
-from rl_agents.wrappers import LagrangianWrapper, TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper
+from rl_agents.wrappers import (
+    LagrangianWrapper, StandardPenaltyWrapper,
+    TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper,
+    PFETerminateWrapper, ForecastObsWrapper,
+)
 
 import tty, termios
 
@@ -163,13 +170,14 @@ def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=
     if action_time is not None:
         print(f"ACTION DECISION TIME: {action_time*1000:.2f} ms")
 
-    print("\nACTION TAKEN (Agent Commands):")
+    print("\nACTION COMMANDED (Agent Output, before BatteryClipWrapper):")
 
     if hasattr(anm_env, 'simulator'):
         sim = anm_env.simulator
         action_idx = 0
 
-        print("  (Each row shows: RAW action - Physical setpoint (MW/MVAr) - Limit status)\n")
+        print("  (Each row shows: RAW action [-1,1] → Intended setpoint (MW/MVAr) → Limit status)")
+        print("  (Actual executed values may differ due to SoC/power clipping — see DEVICE POWER below)\n")
 
         for dev_id, dev in sim.devices.items():
             is_gen = isinstance(dev, Generator) and not dev.is_slack
@@ -287,14 +295,24 @@ def make_env(env_id, vec_env_path, wrappers=True):
     Create a single (non-vectorized) environment with the same wrappers
     used during training, suitable for visualization.
 
-    Wrapper order MUST match train.py exactly:
-        TimeLimitWrapper → NormalizeActionWrapper → BatteryClipWrapper → LagrangianWrapper
+    Wrapper order MUST match train.py → make_train_env() exactly:
+        TimeLimitWrapper → NormalizeActionWrapper → BatteryClipWrapper
+        → [ForecastObsWrapper] → LagrangianWrapper / StandardPenaltyWrapper
+        → PFETerminateWrapper
+
     BatteryClipWrapper.step calls self.env.rescale_action, which only exists on
     NormalizeActionWrapper. Placing BatteryClipWrapper before NormalizeActionWrapper
-    breaks all battery clipping).
+    breaks all battery clipping.
     """
     import gymnasium as gym
     from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+    from rl_agents.hyperparameters import INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS
+
+    # Forecast horizon: import if available, default to 0 (disabled).
+    try:
+        from rl_agents.hyperparameters import FORECAST_HORIZON_STEPS
+    except ImportError:
+        FORECAST_HORIZON_STEPS = 0
 
     # Load the trained lambda so the agent sees the same reward landscape it
     # was trained on.  Falls back to [1, 1, 1] if the file is missing.
@@ -312,14 +330,26 @@ def make_env(env_id, vec_env_path, wrappers=True):
 
     def _init():
         env = gym.make(env_id)
+        if hasattr(env, "include_branch_overload_in_constraints"):
+            env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
         if wrappers:
-            # Order must mirror train.py → make_train_env()
+            # Order mirrors train.py → make_train_env()
             env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)   # needs NormalizeActionWrapper below it
-            # lambda_lr=0.0 keeps the multiplier frozen during visualization
-            env = LagrangianWrapper(env, v_tolerance=0.05, lambda_lr=0.0,
-                                    lambda_init=lambda_init)
+            if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
+                env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
+            if USE_LAGRANGIAN:
+                # lambda_lr=0.0 keeps the multiplier frozen during visualization
+                env = LagrangianWrapper(env, lambda_lr=0.0, lambda_init=lambda_init)
+            else:
+                env = StandardPenaltyWrapper(
+                    env,
+                    w_v=STANDARD_PENALTY_W_V,
+                    w_p=STANDARD_PENALTY_W_P,
+                    w_q=STANDARD_PENALTY_W_Q,
+                )
+            env = PFETerminateWrapper(env, penalty=20.0)
         return env
 
     env = DummyVecEnv([_init])

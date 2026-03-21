@@ -30,6 +30,7 @@ from .callbacks import ProgressBarManager, EvalCallback
 from .utils import save_hyperparameters, parse_args, make_log_dirs  # REMOVED make_envs, added save_hyperparameters
 from .wrappers import (
     LagrangianWrapper,
+    StandardPenaltyWrapper,
     TimeLimitWrapper,
     NormalizeActionWrapper,
     BatteryClipWrapper,
@@ -150,6 +151,9 @@ def main():
             'GAMMA': GAMMA,
             'MAX_EVAL_EP_LENGTH': MAX_EVAL_EP_LENGTH,
             'USE_LAGRANGIAN': USE_LAGRANGIAN,
+            'STANDARD_PENALTY_W_V': STANDARD_PENALTY_W_V,
+            'STANDARD_PENALTY_W_P': STANDARD_PENALTY_W_P,
+            'STANDARD_PENALTY_W_Q': STANDARD_PENALTY_W_Q,
         }
         save_hyperparameters(LOG_DIR, PARAMS)
 
@@ -180,6 +184,14 @@ def main():
                     lambda_lr=effective_lambda_lr,
                     lambda_init=lambda_init_value,
                 )
+            else:
+                # Fixed-weight penalty covering the same 3 constraint channels
+                env = StandardPenaltyWrapper(
+                    env,
+                    w_v=STANDARD_PENALTY_W_V,
+                    w_p=STANDARD_PENALTY_W_P,
+                    w_q=STANDARD_PENALTY_W_Q,
+                )
             env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
             env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + rank)
@@ -188,7 +200,12 @@ def main():
 
 
     def make_eval_env(rank: int):
-        """Factory that returns a single wrapped eval env (lambda not updated)."""
+        """Factory that returns a single wrapped eval env.
+
+        NO penalty wrapper (Lagrangian / StandardPenalty) is applied here so
+        that the evaluation reward is the pure economic reward from BCP.
+        Constraint violations are still tracked via info["constraint_costs"].
+        """
         def _init():
             env = gym.make(ENV_ID)
             if hasattr(env, "include_branch_overload_in_constraints"):
@@ -198,15 +215,7 @@ def main():
             env = BatteryClipWrapper(env)  # Battery clipping wrapper AFTER normalization
             if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
                 env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
-            # lambda_lr=0 disables dual updates during evaluation
-            if USE_LAGRANGIAN:
-                env = LagrangianWrapper(
-                    env,
-                    v_tolerance=V_TOLERANCE,
-                    pq_limit=PQ_LIMIT,
-                    lambda_lr=0.0,
-                    lambda_init=lambda_init_value,
-                )
+            # No LagrangianWrapper / StandardPenaltyWrapper — eval reports raw economic reward
             env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
             env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + 1000 + rank)

@@ -97,24 +97,12 @@ class BCP_base(ANMEnv):
         q_max = np.array([device_data[i].q_max for i in device_ids], dtype=np.float32) * base_mva
         q_min = np.array([device_data[i].q_min for i in device_ids], dtype=np.float32) * base_mva
 
-        p_violation = np.zeros_like(dev_p)
-        q_violation = np.zeros_like(dev_q)
-
-        for i in range(len(dev_p)):
-            if device_type[i] == 0:
-                continue
-            if not np.isnan(p_max[i]):
-                p_violation[i] += max(0, dev_p[i] - p_max[i])
-            if not np.isnan(p_min[i]):
-                p_violation[i] += max(0, p_min[i] - dev_p[i])
-
-        for i in range(len(dev_q)):
-            if device_type[i] == 0:
-                continue
-            if not np.isnan(q_max[i]):
-                q_violation[i] += max(0, dev_q[i] - q_max[i])
-            if not np.isnan(q_min[i]):
-                q_violation[i] += max(0, q_min[i] - dev_q[i])
+        mask = (device_type != 0)
+        p_violation = mask * (np.maximum(0, dev_p - np.nan_to_num(p_max, nan=np.inf)) + 
+                              np.maximum(0, np.nan_to_num(p_min, nan=-np.inf) - dev_p))
+        
+        q_violation = mask * (np.maximum(0, dev_q - np.nan_to_num(q_max, nan=np.inf)) + 
+                              np.maximum(0, np.nan_to_num(q_min, nan=-np.inf) - dev_q))
 
         bus_ids = sorted(self.simulator.buses.keys())
         bus_v = np.array([bus_v_dict.get(i, 1.0) for i in bus_ids], dtype=float)
@@ -123,21 +111,24 @@ class BCP_base(ANMEnv):
         v_min = np.array([getattr(b, 'v_min', 0.9) for b in bus_objects], dtype=float)
         v_violation = np.maximum(0, bus_v - v_max) + np.maximum(0, v_min - bus_v)
 
+        delta_t_h = float(getattr(self, "delta_t", 0.25))
+
         branch_s_dict = full_state.get("branch_s", {}).get("MVA", {})
         branch_ids = sorted(self.simulator.branches.keys())
-        branch_overload_mva_sum = 0.0
+        
         branch_overload_mva_max = 0.0
+        branch_overload_mwh = 0.0
+        branch_soft_penalty_mwh = 0.0
+        branch_loading = {}
+        
         for br_id in branch_ids:
             s_mva = abs(float(branch_s_dict.get(br_id, 0.0)))
             s_max = self.simulator.branches[br_id].rate * base_mva
             overload_mva = max(0.0, s_mva - s_max)
-            branch_overload_mva_sum += overload_mva
+            
             branch_overload_mva_max = max(branch_overload_mva_max, overload_mva)
-
-        branch_loading = {}
-        for br_id in branch_ids:
-            s_mva = abs(float(branch_s_dict.get(br_id, 0.0)))
-            s_max = self.simulator.branches[br_id].rate * base_mva
+            branch_overload_mwh += overload_mva * delta_t_h
+            branch_soft_penalty_mwh += max(0.0, s_mva - 0.8 * s_max) * delta_t_h
             branch_loading[br_id] = s_mva / max(s_max, 1e-6)
 
         # Constraint costs used by LagrangianWrapper.
@@ -170,7 +161,6 @@ class BCP_base(ANMEnv):
         #   - minimize renewable curtailment (true energy waste)
         #   - maximize self-sufficiency (reduce reliance on slack/grid interaction)
 
-        delta_t_h = float(getattr(self, "delta_t", 0.25))
         slack_p = float(dev_p_dict.get(0, 0.0))
         
         # Slack interaction (asymmetric):
@@ -199,16 +189,21 @@ class BCP_base(ANMEnv):
         W_SLACK_IMPORT = 2.0
         W_SLACK_EXPORT = 0.2
         W_CYCLE = 0.001
-        W_SOC_RESERVE = 5.0
+
+        W_SOC_RESERVE = 0.5
         # start penalizing when battery SoC is below the following MWh to encourage maintaining a reserve for reliability
-        SOC_RESERVE_MWH = 20.0
-        W_SOC_CEILING = 1
+        SOC_RESERVE_MWH = 10.0
+        W_SOC_CEILING = 0.2
         # start penalizing when battery SoC is above the following MWh to discourage hoarding / near-full saturation
         SOC_CEILING_MWH = 90.0
 
-        W_Q_MAGNITUDE = 2.0   # penalità per |Q| totale (MVAr * h) — increased from 0.5 to strongly discourage unnecessary reactive power
-        W_BRANCH_OVERLOAD = 50.0
-        W_BRANCH_SOFT = 5.0
+        W_Q_MAGNITUDE = 0.1
+        W_BRANCH_SOFT = 0.5
+
+        # Note: Hard constraint penalties (like branch overloads) are intentionally omitted
+        # from this base economic reward. For Lagrangian RL, LagrangianWrapper will apply 
+        # dynamic penalties using `info['constraint_costs']`. For Standard RL, use a wrapper
+        # to apply static penalties.
 
         curtailment_mwh = curtailment_mw * delta_t_h
         slack_import_mwh = slack_import_mw * delta_t_h
@@ -216,16 +211,7 @@ class BCP_base(ANMEnv):
         cycle_mwh = abs(battery_p) * delta_t_h
 
         # Branch overload is expressed as MVAh for consistency with other energy-like objective terms.
-        branch_overload_mwh = 0.0
-        branch_soft_penalty_mwh = 0.0
-        for br_id in branch_ids:
-            s_mva = abs(float(branch_s_dict.get(br_id, 0.0)))
-            s_max = self.simulator.branches[br_id].rate * base_mva
-            overload_mva = max(0.0, s_mva - s_max)
-            branch_overload_mwh += overload_mva * delta_t_h
-            # soft pre-penalty: loading > 80% of limit
-            loading_excess = max(0.0, s_mva - 0.8 * s_max)
-            branch_soft_penalty_mwh += loading_excess * delta_t_h
+        # (calculated above in the unified branch loop)
         
         # Reactive power magnitude penalty (discourages unnecessary Q injection/absorption)
         # Sum |Q| over all controllable devices (skip slack, device 0)
@@ -243,8 +229,6 @@ class BCP_base(ANMEnv):
             + W_SOC_RESERVE * soc_reserve_shortfall_mwh
             + W_SOC_CEILING * soc_ceiling_excess_mwh
             + W_Q_MAGNITUDE * q_magnitude_mvarh
-            + W_BRANCH_OVERLOAD * branch_overload_mwh
-            + W_BRANCH_OVERLOAD * branch_overload_mwh
             + W_BRANCH_SOFT * branch_soft_penalty_mwh
         )
 

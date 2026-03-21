@@ -339,8 +339,10 @@ class BatteryClipWrapper(gym.Wrapper):
                 efficiency = float(getattr(dev, "eff", efficiency))
 
         # Clip battery power to physical limits AND SOC constraints
+        original_battery_p = None  # saved before clipping for Q-zeroing check
         if len(raw_action) > self.battery_action_idx:
             battery_action = raw_action[self.battery_action_idx]
+            original_battery_p = float(battery_action)
             clipped_battery_action = battery_action
 
             # Apply power limits first
@@ -371,10 +373,10 @@ class BatteryClipWrapper(gym.Wrapper):
         
         # If P was clipped to near-zero due to SoC constraints, also clip Q
         battery_q_idx = self.battery_action_idx + 1  # action[3]
-        if len(raw_action) > battery_q_idx:
+        if len(raw_action) > battery_q_idx and original_battery_p is not None:
             # How much P was clipped relative to what was commanded?
-            original_p = raw_action[self.battery_action_idx]  # before clip
-            clipped_p  = clipped_battery_action
+            original_p = original_battery_p
+            clipped_p  = raw_action[self.battery_action_idx]  # already overwritten with clipped value
             # If SoC forced P to ≤5% of command, battery is effectively idle — zero Q too
             if abs(original_p) > 1e-3 and abs(clipped_p) < 0.05 * abs(original_p):
                 raw_action[battery_q_idx] = 0.0
@@ -395,3 +397,50 @@ class BatteryClipWrapper(gym.Wrapper):
 
     def reset(self, seed=None, options=None):
         return self.env.reset(seed=seed, options=options)
+
+class StandardPenaltyWrapper(gym.Wrapper):
+    
+    # Applies fixed constraint penalties directly to the reward for standard RL training
+    # (i.e. when the Lagrangian method is not used).
+
+    # Penalizes the same 3 constraint channels as :class:`LagrangianWrapper`:
+    #   0 – voltage violation  (max |V - V_lim| in p.u.)
+    #   1 – P violation        (max device-P or branch-overload in p.u.)
+    #   2 – Q violation        (max device-Q violation in p.u.)
+
+    # The key ``info["constraint_costs"]`` is populated by the BCP environment and
+    # has shape ``(3,)``.
+
+    # Unlike the Lagrangian wrapper, the penalty weights are **fixed** (not learned),
+    # so they should be set large enough to discourage violations while keeping the
+    # reward scale compatible with training.
+
+    # :param env:   Gymnasium environment (must provide ``info["constraint_costs"]``).
+    # :param w_v:   Fixed weight for voltage constraint violation.
+    # :param w_p:   Fixed weight for active-power / branch-overload constraint violation.
+    # :param w_q:   Fixed weight for reactive-power constraint violation.
+    
+
+    def __init__(self, env: gym.Env, w_v: float = 50.0, w_p: float = 50.0, w_q: float = 50.0):
+        super().__init__(env)
+        self.weights = np.array([w_v, w_p, w_q], dtype=np.float32)
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+
+        costs = info.get("constraint_costs", np.zeros(3, dtype=np.float32))
+        costs = np.asarray(costs, dtype=np.float32)
+        if costs.shape != (3,):
+            costs = np.zeros(3, dtype=np.float32)
+
+        penalty = float(np.dot(self.weights, costs))
+        modified_reward = reward - penalty
+
+        # Logging (mirrors LagrangianWrapper keys for easy comparison)
+        info["original_reward"] = reward
+        info["standard_penalty"] = penalty
+        info["standard_penalty/cost_v"] = float(costs[0])
+        info["standard_penalty/cost_p"] = float(costs[1])
+        info["standard_penalty/cost_q"] = float(costs[2])
+
+        return obs, modified_reward, terminated, truncated, info

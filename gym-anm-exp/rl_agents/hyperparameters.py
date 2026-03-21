@@ -36,7 +36,7 @@ ENV_ID = "BCP-v0"
 
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
-TRAIN_STEPS = 22000
+TRAIN_STEPS = 1000000
 MAX_TRAINING_EP_LENGTH = 5000 
 EVAL_FREQ = 20000
 N_EVAL_EPISODES = 5  
@@ -50,6 +50,13 @@ USE_LAGRANGIAN = True
 # and therefore enforced by the LagrangianWrapper. If False, it is still logged
 # via `constraint/branch_overload_pu_max` but not part of the dual update.
 INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS = True
+
+# Fixed penalty weights for StandardPenaltyWrapper (used when USE_LAGRANGIAN=False).
+# These multiply info["constraint_costs"] = [V_violation, P_violation, Q_violation].
+# For a sensitivity analysis, run training with different weight combinations.
+STANDARD_PENALTY_W_V = 10.0   # voltage constraint weight
+STANDARD_PENALTY_W_P = 10.0   # active-power / branch-overload constraint weight
+STANDARD_PENALTY_W_Q = 10.0   # reactive-power constraint weight
 
 LOG_DIR = BASE_DIR + ENV_ID + '/'
 os.makedirs(LOG_DIR, exist_ok=True)
