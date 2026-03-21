@@ -134,6 +134,12 @@ class BCP_base(ANMEnv):
             branch_overload_mva_sum += overload_mva
             branch_overload_mva_max = max(branch_overload_mva_max, overload_mva)
 
+        branch_loading = {}
+        for br_id in branch_ids:
+            s_mva = abs(float(branch_s_dict.get(br_id, 0.0)))
+            s_max = self.simulator.branches[br_id].rate * base_mva
+            branch_loading[br_id] = s_mva / max(s_max, 1e-6)
+
         # Constraint costs used by LagrangianWrapper.
         # IMPORTANT: p_violation historically measured device active power limit violations (notably the slack).
         # For grid-feasibility, we also need to include branch thermal overloads (|S| > rate).
@@ -193,22 +199,34 @@ class BCP_base(ANMEnv):
         W_SLACK_IMPORT = 2.0
         W_SLACK_EXPORT = 0.2
         W_CYCLE = 0.001
-        W_SOC_RESERVE = 2.0
+        W_SOC_RESERVE = 5.0
         # start penalizing when battery SoC is below the following MWh to encourage maintaining a reserve for reliability
-        SOC_RESERVE_MWH = 5.0
+        SOC_RESERVE_MWH = 20.0
         W_SOC_CEILING = 1
         # start penalizing when battery SoC is above the following MWh to discourage hoarding / near-full saturation
         SOC_CEILING_MWH = 90.0
 
-        W_Q_MAGNITUDE = 0.5   # penalità per |Q| totale (MVAr * h)
-        W_BRANCH_OVERLOAD = 10.0  # penalty for branch overload
+        W_Q_MAGNITUDE = 2.0   # penalità per |Q| totale (MVAr * h) — increased from 0.5 to strongly discourage unnecessary reactive power
+        W_BRANCH_OVERLOAD = 50.0
+        W_BRANCH_SOFT = 5.0
 
         curtailment_mwh = curtailment_mw * delta_t_h
         slack_import_mwh = slack_import_mw * delta_t_h
         slack_export_mwh = slack_export_mw * delta_t_h
         cycle_mwh = abs(battery_p) * delta_t_h
+
         # Branch overload is expressed as MVAh for consistency with other energy-like objective terms.
-        branch_overload_mwh = branch_overload_mva_sum * delta_t_h
+        branch_overload_mwh = 0.0
+        branch_soft_penalty_mwh = 0.0
+        for br_id in branch_ids:
+            s_mva = abs(float(branch_s_dict.get(br_id, 0.0)))
+            s_max = self.simulator.branches[br_id].rate * base_mva
+            overload_mva = max(0.0, s_mva - s_max)
+            branch_overload_mwh += overload_mva * delta_t_h
+            # soft pre-penalty: loading > 80% of limit
+            loading_excess = max(0.0, s_mva - 0.8 * s_max)
+            branch_soft_penalty_mwh += loading_excess * delta_t_h
+        
         # Reactive power magnitude penalty (discourages unnecessary Q injection/absorption)
         # Sum |Q| over all controllable devices (skip slack, device 0)
         controllable_q_ids = [i for i in device_ids if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")]
@@ -226,6 +244,8 @@ class BCP_base(ANMEnv):
             + W_SOC_CEILING * soc_ceiling_excess_mwh
             + W_Q_MAGNITUDE * q_magnitude_mvarh
             + W_BRANCH_OVERLOAD * branch_overload_mwh
+            + W_BRANCH_OVERLOAD * branch_overload_mwh
+            + W_BRANCH_SOFT * branch_soft_penalty_mwh
         )
 
         info["objective_costs"] = np.array(
@@ -243,6 +263,7 @@ class BCP_base(ANMEnv):
         info["objective/battery_soc_mwh"] = float(battery_soc_mwh)
         info["objective/cost_q_magnitude_mvarh"] = float(q_magnitude_mvarh)
         info["objective/cost_branch_overload_mvah"] = float(branch_overload_mwh)
+        info["branch_loading_pu"] = branch_loading
 
         self.year_count = (self.date - self.date_init).days // 365
 

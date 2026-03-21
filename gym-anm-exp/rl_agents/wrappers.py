@@ -368,6 +368,16 @@ class BatteryClipWrapper(gym.Wrapper):
                 clipped_battery_action = max(clipped_battery_action, -max_charge_power)
 
             raw_action[self.battery_action_idx] = clipped_battery_action
+        
+        # If P was clipped to near-zero due to SoC constraints, also clip Q
+        battery_q_idx = self.battery_action_idx + 1  # action[3]
+        if len(raw_action) > battery_q_idx:
+            # How much P was clipped relative to what was commanded?
+            original_p = raw_action[self.battery_action_idx]  # before clip
+            clipped_p  = clipped_battery_action
+            # If SoC forced P to ≤5% of command, battery is effectively idle — zero Q too
+            if abs(original_p) > 1e-3 and abs(clipped_p) < 0.05 * abs(original_p):
+                raw_action[battery_q_idx] = 0.0
 
         # Reverse-rescale from environment space back to [-1, 1]
         # Formula: action_normalized = 2 * (action_raw - low) / (high - low) - 1
