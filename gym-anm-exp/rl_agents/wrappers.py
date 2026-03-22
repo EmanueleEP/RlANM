@@ -3,10 +3,58 @@ import gymnasium as gym
 import numpy as np
 
 
+
+class ForecastObsWrapper(gym.ObservationWrapper):
+    """Appends a short lookahead window of exogenous variables to the observation."""
+
+    def __init__(self, env: gym.Env, horizon_steps: int = 4):
+        super().__init__(env)
+        self.horizon_steps = int(horizon_steps)
+        if self.horizon_steps <= 0:
+            raise ValueError("horizon_steps must be >= 1")
+
+        base = env.unwrapped
+        if not hasattr(base, "P_loads") or not hasattr(base, "P_maxs"):
+            raise ValueError("Underlying env must expose P_loads and P_maxs for ForecastObsWrapper.")
+
+        self._p_loads = np.asarray(base.P_loads, dtype=np.float32)
+        self._p_maxs = np.asarray(base.P_maxs, dtype=np.float32)
+        if self._p_loads.ndim != 2 or self._p_maxs.ndim != 2:
+            raise ValueError("P_loads and P_maxs must be 2D arrays.")
+
+        self._steps_per_day = int(self._p_loads.shape[1])
+        if self._p_maxs.shape[1] != self._steps_per_day:
+            raise ValueError("P_loads and P_maxs must have the same number of timesteps per day.")
+
+        added = self.horizon_steps * (self._p_loads.shape[0] + self._p_maxs.shape[0])
+        old_space = self.observation_space
+        if not isinstance(old_space, gym.spaces.Box) or len(old_space.shape) != 1:
+            raise ValueError("ForecastObsWrapper expects a 1D Box observation space.")
+
+        forecast_low = -1e6 * np.ones(added, dtype=np.float32)
+        forecast_high = 1e6 * np.ones(added, dtype=np.float32)
+        low = np.concatenate([np.asarray(old_space.low, dtype=np.float32), forecast_low])
+        high = np.concatenate([np.asarray(old_space.high, dtype=np.float32), forecast_high])
+        self.observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float32)
+
+    def observation(self, observation):
+        base = self.env.unwrapped
+        time_idx = int(getattr(base, "state", np.array([0]))[-1])
+        feats = []
+        for h in range(1, self.horizon_steps + 1):
+            idx = (time_idx + h) % self._steps_per_day
+            feats.append(self._p_loads[:, idx])
+            feats.append(self._p_maxs[:, idx])
+        forecast = np.concatenate(feats, axis=0).astype(np.float32)
+        return np.concatenate([np.asarray(observation, dtype=np.float32), forecast], axis=0)
+
+
+
 class NormalizeActionWrapper(gym.Wrapper):
     def __init__(self, env):
         action_space = env.action_space
         assert isinstance(action_space, gym.spaces.Box), \
+            "This wrapper only works with continuous action space (spaces.Box)"
         self.low, self.high = action_space.low, action_space.high
         env.action_space = gym.spaces.Box(
             low=-1, high=1, shape=action_space.shape, dtype=np.float32

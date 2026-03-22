@@ -6,6 +6,7 @@ import os
 import warnings
 import copy
 from typing import Any, Dict, Optional, Union
+from tqdm.auto import tqdm
 
 import gymnasium as gym
 import numpy as np
@@ -14,6 +15,51 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, VecNormalize, 
 
 from .evaluation import evaluate_policy
 
+
+class ProgressBarCallback(BaseCallback):
+    """
+    A callback to display a Progress Bar during training.
+
+    :param pbar: (tqdm.pbar) Progress bar object
+    """
+
+    def __init__(self, pbar):
+        super(ProgressBarCallback, self).__init__()
+        self._pbar = pbar
+
+    def _on_step(self):
+        # Update the progress bar:
+        self._pbar.n = self.num_timesteps
+        self._pbar.update(0)
+        return True
+
+
+# this callback uses the 'with' block, allowing for correct initialisation and destruction
+class ProgressBarManager(object):
+    """
+    A class that allows the use of the `with` keyword to display a training progress bar.
+
+    Example
+    -------
+    Using the progress bar manager to monitor training::
+
+        with ProgressBarManager(TRAIN_STEPS) as c:
+            model.learn(total_timesteps=TRAIN_STEPS, callback=[c])
+
+    """
+    def __init__(self, total_timesteps):  # init object with total timesteps
+        self.pbar = None
+        self.total_timesteps = total_timesteps
+
+    def __enter__(self):  # create the progress bar and callback, return the callback
+        self.pbar = tqdm(total=self.total_timesteps)
+
+        return ProgressBarCallback(self.pbar)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):  # close the callback
+        self.pbar.n = self.total_timesteps
+        self.pbar.update(0)
+        self.pbar.close()
 
 class EvalCallback(EventCallback):
 
@@ -40,7 +86,7 @@ class EvalCallback(EventCallback):
         if not isinstance(eval_env, VecEnv):
             eval_env = DummyVecEnv([lambda: eval_env])
 
-        assert eval_env.num_envs == 1, 
+        assert eval_env.num_envs == 1, "Pass just one environment for evaluation"
 
         self.eval_env = eval_env
         self.best_model_save_path = best_model_save_path
@@ -179,7 +225,7 @@ class EvalCallback(EventCallback):
                     self.eval_env.save(
                         os.path.join(self.best_model_save_path, "training_vec_env")
                     )
-                    
+
             self.best_mean_reward = mean_reward
             if self.callback is not None:
                 return self._on_event()
