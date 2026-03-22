@@ -38,33 +38,48 @@ class LambdaSyncCallback(BaseCallback):
                 raise ValueError("Could not find LagrangianWrapper in a sub-env.")
             self._wrappers.append(w)
 
-    def _on_step(self) -> bool:
-        dones = self.locals.get("dones", [])
-        infos = self.locals.get("infos", [])
-        if any(dones):
-            # Collect avg costs for envs that ended this step.
-            episode_avgs = []
-            for i, done in enumerate(dones):
-                if not done or i >= len(infos):
-                    continue
-                avg = infos[i].get("lagrangian/episode_cost_avg", None)
-                if avg is None:
-                    continue
-                episode_avgs.append(np.asarray(avg, dtype=np.float32))
-
-            # Sync/update lambda only when we have the signals.
-            if episode_avgs:
-                avg_cost = np.stack(episode_avgs, axis=0).mean(axis=0)
-                cost_limit = np.asarray(self._wrappers[0].cost_limit, dtype=np.float32)
-                gradient = avg_cost - cost_limit
-
-                lambdas = np.stack([w.get_lambda() for w in self._wrappers], axis=0)
-                avg_lam = lambdas.mean(axis=0)
-                new_lam = avg_lam + self.dual_lr * gradient
-
-                for w in self._wrappers:
-                    w.set_lambda(new_lam)
-
-                if self.verbose >= 1:
-                    print(f"[LambdaSync] avg_cost={avg_cost} limit={cost_limit} grad={gradient} lambda={new_lam}")
-        return True
+        def _on_step(self) -> bool:
+            dones = self.locals.get("dones", [])
+            infos = self.locals.get("infos", [])
+            if any(dones):
+                # Collect effective costs for envs that finished this step.
+                episode_effective = []
+                for i, done in enumerate(dones):
+                    if not done or i >= len(infos):
+                        continue
+                    avg  = infos[i].get("lagrangian/episode_cost_avg", None)
+                    peak = infos[i].get("lagrangian/episode_cost_max", None)
+    
+                    if avg is None:
+                        continue
+    
+                    avg_arr = np.asarray(avg, dtype=np.float32)
+    
+                    if peak is not None:
+                        peak_arr = np.asarray(peak, dtype=np.float32)
+                        # Peak-aware blend (same formula as LagrangianWrapper._update_lambda)
+                        effective = (1.0 - self.peak_weight) * avg_arr + self.peak_weight * peak_arr
+                    else:
+                        # Fallback: avg only (old behaviour, e.g. if info key is missing)
+                        effective = avg_arr
+    
+                    episode_effective.append(effective)
+    
+                if episode_effective:
+                    avg_effective = np.stack(episode_effective, axis=0).mean(axis=0)
+                    cost_limit = np.asarray(self._wrappers[0].cost_limit, dtype=np.float32)
+                    gradient = avg_effective - cost_limit
+    
+                    lambdas = np.stack([w.get_lambda() for w in self._wrappers], axis=0)
+                    avg_lam = lambdas.mean(axis=0)
+                    new_lam = np.clip(avg_lam + self.dual_lr * gradient, 0.0, self._wrappers[0].lambda_max)
+    
+                    for w in self._wrappers:
+                        w.set_lambda(new_lam)
+    
+                    if self.verbose >= 1:
+                        print(
+                            f"[LambdaSync] effective={avg_effective} "
+                            f"limit={cost_limit} grad={gradient} lambda={new_lam}"
+                        )
+            return True

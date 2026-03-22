@@ -187,19 +187,20 @@ class BCP_base(ANMEnv):
 
         # Weights are in "reward per MWh".
         W_CURTAIL = 1.0
-        W_SLACK_IMPORT = 2.0
-        W_SLACK_EXPORT = 0.2
+        W_SLACK_IMPORT = 1.0
+        W_SLACK_EXPORT = 0.1
         W_CYCLE = 0.001
 
         W_SOC_RESERVE = 0.5
         # start penalizing when battery SoC is below the following MWh to encourage maintaining a reserve for reliability
         SOC_RESERVE_MWH = 10.0
-        W_SOC_CEILING = 0.2
+        W_SOC_CEILING = 0.5
         # start penalizing when battery SoC is above the following MWh to discourage hoarding / near-full saturation
         SOC_CEILING_MWH = 90.0
 
         W_Q_MAGNITUDE = 0.1
-        W_BRANCH_SOFT = 0.5
+        W_BRANCH_SOFT = 3.0
+        W_BRANCH_HARD   = 10.0
 
         # Note: Hard constraint penalties (like branch overloads) are intentionally omitted
         # from this base economic reward. For Lagrangian RL, LagrangianWrapper will apply 
@@ -231,6 +232,7 @@ class BCP_base(ANMEnv):
             + W_SOC_CEILING * soc_ceiling_excess_mwh
             + W_Q_MAGNITUDE * q_magnitude_mvarh
             + W_BRANCH_SOFT * branch_soft_penalty_mwh
+            + W_BRANCH_HARD  * branch_overload_mwh
         )
 
         info["objective_costs"] = np.array(

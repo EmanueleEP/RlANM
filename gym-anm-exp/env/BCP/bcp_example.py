@@ -74,12 +74,10 @@ class BCP(BCP_base):
             soc_min_mwh = float(self.simulator.devices[dev_id].soc_min) * float(self.simulator.baseMVA)
             soc_max_mwh = float(self.simulator.devices[dev_id].soc_max) * float(self.simulator.baseMVA)
 
-            # Randomize initial SoC between 1% and 60% of capacity during training.
+            # Randomize initial SoC between 1% and 100% of capacity during training.
             # This ensures the agent experiences diverse battery states and learns
             # both charging and discharging strategies.
-            initial_soc_mwh = float(self.np_random.uniform(
-                0.01 * soc_max_mwh, 0.6 * soc_max_mwh
-            ))
+            initial_soc_mwh = float(self.np_random.uniform(soc_min_mwh, soc_max_mwh))
             initial_soc_mwh = float(np.clip(initial_soc_mwh, soc_min_mwh, soc_max_mwh))
 
             state[2 * n_dev + idx] = initial_soc_mwh  # SoC in MWh

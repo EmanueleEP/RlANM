@@ -51,7 +51,7 @@ def _make_train_env_factory(
     env_id, run_log_dir, seed, max_ep_length,
     use_lagrangian, lambda_init, lambda_lr, v_tolerance, pq_limit,
     n_envs, include_branch_overload, forecast_horizon, pfe_penalty,
-    standard_penalty_w_v, standard_penalty_w_p, standard_penalty_w_q,
+    standard_penalty_w_v, standard_penalty_w_p, standard_penalty_w_q, peak_weight,
 ):
     """
     Restituisce una factory per gli environment di training.
@@ -78,6 +78,7 @@ def _make_train_env_factory(
                     lambda_lr=effective_lr,
                     lambda_init=lambda_init,
                     n_envs=n_envs,
+                    peak_weight=peak_weight,
                 )
             else:
                 env = StandardPenaltyWrapper(
@@ -137,6 +138,8 @@ def main():
     V_TOLERANCE     = 1.0
     PQ_LIMIT        = 1.0    
     LAMBDA_LR       = 0.1
+    PEAK_WEIGHT = 0.7
+
     FORECAST_HORIZON_STEPS = 0
     PFE_TERMINATE_PENALTY  = 20.0
 
@@ -181,6 +184,8 @@ def main():
             "POLICY": POLICY, "ALGO": ALGO.__name__,
             "GAMMA": GAMMA, "MAX_EVAL_EP_LENGTH": MAX_EVAL_EP_LENGTH,
             "USE_LAGRANGIAN": USE_LAGRANGIAN,
+            "PEAK_WEIGHT": PEAK_WEIGHT,
+            "LAMBDA_LR": LAMBDA_LR,
             "STANDARD_PENALTY_W_V": STANDARD_PENALTY_W_V,
             "STANDARD_PENALTY_W_P": STANDARD_PENALTY_W_P,
             "STANDARD_PENALTY_W_Q": STANDARD_PENALTY_W_Q,
@@ -203,6 +208,7 @@ def main():
         standard_penalty_w_v=STANDARD_PENALTY_W_V,
         standard_penalty_w_p=STANDARD_PENALTY_W_P,
         standard_penalty_w_q=STANDARD_PENALTY_W_Q,
+        peak_weight=PEAK_WEIGHT,
     )
     eval_factory = _make_eval_env_factory(
         env_id=ENV_ID, run_log_dir=run_log_dir, seed=SEED,
@@ -251,7 +257,7 @@ def main():
 
     callbacks = [eval_callback]
     if USE_LAGRANGIAN and N_ENVS > 1:
-        callbacks.append(LambdaSyncCallback(train_env, dual_lr=LAMBDA_LR, verbose=1))
+        callbacks.append(LambdaSyncCallback(train_env, dual_lr=LAMBDA_LR, verbose=1, peak_weight=PEAK_WEIGHT))
     callbacks.append(BatteryExplorationCallback(verbose=1, battery_reward_scale=0.1))
 
     if not args.disable_step_log:

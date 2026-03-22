@@ -117,7 +117,8 @@ class LagrangianWrapper(gym.Wrapper):
         lambda_lr: float = 1e-2,
         normalize_by_episode_length: bool = True,
         lambda_max: float = 500.0,
-        n_envs: int = 1,               
+        n_envs: int = 1,
+        peak_weight: float = 0.5,
     ):
         super().__init__(env)
         base_env = env.unwrapped
@@ -128,6 +129,7 @@ class LagrangianWrapper(gym.Wrapper):
         self.lambda_max = lambda_max
         self.n_constraints = 3
         self.cost_limit = np.array([v_tolerance, pq_limit, pq_limit], dtype=np.float32)
+        self.peak_weight = float(np.clip(peak_weight, 0.0, 1.0))
 
         # FIX: assert di coerenza tra lambda_lr e n_envs
         if n_envs > 1 and lambda_lr > 0.0:
@@ -143,6 +145,7 @@ class LagrangianWrapper(gym.Wrapper):
             self.lam = np.full(self.n_constraints, float(lambda_init_arr[0]), dtype=np.float32)
 
         self.episode_cost = np.zeros(self.n_constraints, dtype=np.float32)
+        self.episode_cost_max = np.zeros(self.n_constraints, dtype=np.float32)  # NEW
         self.episode_length = 0
 
     def get_lambda(self) -> np.ndarray:
@@ -156,6 +159,7 @@ class LagrangianWrapper(gym.Wrapper):
 
     def reset(self, **kwargs):
         self.episode_cost = np.zeros(self.n_constraints, dtype=np.float32)
+        self.episode_cost_max = np.zeros(self.n_constraints, dtype=np.float32)
         self.episode_length = 0
         return self.env.reset(**kwargs)
 
@@ -169,6 +173,7 @@ class LagrangianWrapper(gym.Wrapper):
             costs = np.zeros(self.n_constraints, dtype=np.float32)
 
         self.episode_cost += costs
+        self.episode_cost_max = np.maximum(self.episode_cost_max, costs)
         self.episode_length += 1
 
         penalty = float(np.dot(self.lam, costs))
@@ -190,6 +195,7 @@ class LagrangianWrapper(gym.Wrapper):
             )
             info["lagrangian/episode_cost_sum"] = self.episode_cost.copy()
             info["lagrangian/episode_cost_avg"] = avg_cost.astype(np.float32)
+            info["lagrangian/episode_cost_max"] = self.episode_cost_max.copy()
             info["lagrangian/episode_length"] = int(self.episode_length)
 
         info["lagrangian/lambda_v"] = float(self.lam[0])
@@ -203,17 +209,27 @@ class LagrangianWrapper(gym.Wrapper):
         return obs, modified_reward, terminated, truncated, info
 
     def _update_lambda(self):
+
         if self.normalize and self.episode_length > 0:
             avg_cost = self.episode_cost / self.episode_length
         else:
             avg_cost = self.episode_cost
+        
+        effective_cost = (
+            (1.0 - self.peak_weight) * avg_cost
+            + self.peak_weight * self.episode_cost_max
+        )
+
         gradient = avg_cost - self.cost_limit
         self.lam = np.clip(self.lam + self.lambda_lr * gradient, 0.0, self.lambda_max)
+        
         print(
             f"Episode ended | Steps: {self.episode_length}\n"
-            f"Avg costs:  {avg_cost}  (limit: {self.cost_limit})\n"
-            f"Gradient:   {gradient}\n"
-            f"New lambda: {self.lam}\n"
+            f"Avg costs:    {avg_cost}  (limit: {self.cost_limit})\n"
+            f"Peak costs:   {self.episode_cost_max}\n"
+            f"Effective:    {effective_cost}\n"
+            f"Gradient:     {gradient}\n"
+            f"New lambda:   {self.lam}\n"
         )
 
 
@@ -360,9 +376,9 @@ class BatteryClipWrapper(gym.Wrapper):
 
         # Azzera Q se la batteria è fisicamente ferma per vincoli SoC
         battery_q_idx = self.battery_action_idx + 1
+
         if len(raw_action) > battery_q_idx and original_battery_p is not None:
-            clipped_p = raw_action[self.battery_action_idx]
-            if abs(original_battery_p) > 1e-3 and abs(clipped_p) < 0.05 * abs(original_battery_p):
+            if abs(original_battery_p) < 1e-3:
                 raw_action[battery_q_idx] = 0.0
 
         if normalizer is not None:
