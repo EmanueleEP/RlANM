@@ -8,13 +8,7 @@ from .bcp import BCP_base
 profiles_path = "env/BCP/daysHoursPQ.txt"
 
 
-try:
-    from rl_agents.hyperparameters import USE_LAGRANGIAN as _USE_LAGRANGIAN
-except ImportError:
-    _USE_LAGRANGIAN = False
- 
-_LAMB = 0 if _USE_LAGRANGIAN else 100
-
+_LAMB = 0 
 
 class BCP(BCP_base):
     """The :code:`BCP-v0` task."""

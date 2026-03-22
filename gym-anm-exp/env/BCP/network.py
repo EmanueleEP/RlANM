@@ -53,17 +53,20 @@ network["bus"] = np.array(
         [0, 0, 132, 1.0, 1.0],
         [1, 1, 33, 1.1, 0.9],
         [2, 1, 33, 1.1, 0.9]
-    ]
+    ],
+    dtype=np.float64,
 )
+
+_NaN = np.nan
 
 _device_rows = np.array(
     [
-        [0, 0, 0, None, 20, -20, 20, -20, None, None, None, None, None, None, None],  # slack
-        [1, 2, -1, 0.2, 0, -20, None, None, None, None, None, None, None, None, None],  # load
-        [2, 2, 2, None, 30, 0, 30, -30, 20, None, 15, -15, None, None, None], # solar
-        [3, 2, 3, None, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0.1, 0.9],  # battery
+        [0, 0, 0, _NaN, 200, -200, 200, -200, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN],  # slack
+        [1, 2, -1, 0.2, 0, -20, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN],  # load
+        [2, 2, 2, _NaN, 30, 0, 30, -30, 20, _NaN, 15, -15, _NaN, _NaN, _NaN], # solar
+        [3, 2, 3, _NaN, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0.1, 0.9],  # battery
     ],
-    dtype=object 
+    dtype=np.float64,
 )
 network["device"] = np.empty((len(_device_rows), len(_device_rows[0])), dtype=object)
 for i, row in enumerate(_device_rows):
@@ -75,6 +78,7 @@ network["branch"] = np.array(
     [
         [0, 1, 0.0036, 0.1834, 0.0, 32, 1, 1],
         [1, 2, 0.03, 0.022, 0.0, 10, 1, 0],
-    ]
+    ],
+    dtype=np.float64,
 )
 

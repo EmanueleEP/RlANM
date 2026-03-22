@@ -8,7 +8,7 @@ from gym_anm import ANMEnv
 from .rendering.py import rendering
 from .network import network as network_default
 from .utils import random_date
-
+from .fix_reward import build_constraint_costs
 
 class BCP_base(ANMEnv):
     metadata = {"render_modes": ["human"]}
@@ -70,6 +70,8 @@ class BCP_base(ANMEnv):
 
     def step(self, action):
         obs, r, terminated, truncated, info = super().step(action)
+
+        r = 0.0 # avoids double counting with e_loss of ANMEnv
 
         self.date += self.timestep_length
 
@@ -144,13 +146,10 @@ class BCP_base(ANMEnv):
 
         q_violation_pu_max = float(np.max(q_violation) / base_mva) if len(q_violation) > 0 else 0.0
 
-        info["constraint_costs"] = np.array(
-            [
-                np.max(v_violation) if len(v_violation) > 0 else 0.0,
-                combined_p_constraint,
-                q_violation_pu_max,
-            ],
-            dtype=np.float32,
+        info["constraint_costs"] = build_constraint_costs(
+            v_violation_pu_max=float(np.max(v_violation)) if len(v_violation) > 0 else 0.0,
+            combined_p_constraint_pu=combined_p_constraint,
+            q_violation_pu_max=q_violation_pu_max,
         )
         info["constraint/p_violation_pu_max"] = p_violation_pu_max
         info["constraint/branch_overload_pu_max"] = branch_overload_pu_max
