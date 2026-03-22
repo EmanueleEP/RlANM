@@ -71,7 +71,9 @@ class BCP_base(ANMEnv):
     def step(self, action):
         obs, r, terminated, truncated, info = super().step(action)
 
-        r = 0.0 # avoids double counting with e_loss of ANMEnv
+        r = 0.0 # Completely replaces ANMEnv reward with custom economic objective.
+                # Constraint penalties are handled externally by LagrangianWrapper.
+                # lamb=0 in BCP disables ANMEnv's own penalty term.
 
         self.date += self.timestep_length
 

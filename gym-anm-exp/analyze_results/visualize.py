@@ -12,6 +12,7 @@ import time
 import numpy as np
 import torch
 
+import zipfile
 import argparse
 import fcntl
 import warnings
