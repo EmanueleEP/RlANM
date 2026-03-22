@@ -137,8 +137,8 @@ def main():
 
     V_TOLERANCE     = 1.0
     PQ_LIMIT        = 1.0    
-    LAMBDA_LR       = 0.1
-    PEAK_WEIGHT = 0.7
+    LAMBDA_LR       = 0.005
+    PEAK_WEIGHT = 0.2
 
     FORECAST_HORIZON_STEPS = 0
     PFE_TERMINATE_PENALTY  = 20.0
@@ -152,7 +152,7 @@ def main():
     NORM_OBS     = True
     NORM_REWARD  = True
     CLIP_OBS     = 10.0
-    CLIP_REWARD  = 50.0
+    CLIP_REWARD  = 200.0
 
     # Paths del checkpoint
     agent_path  = os.path.join(run_log_dir, "best_model.zip")

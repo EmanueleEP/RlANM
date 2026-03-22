@@ -116,9 +116,10 @@ class LagrangianWrapper(gym.Wrapper):
         lambda_init=1.0,
         lambda_lr: float = 1e-2,
         normalize_by_episode_length: bool = True,
-        lambda_max: float = 500.0,
+        lambda_max: float = 50.0,
         n_envs: int = 1,
-        peak_weight: float = 0.5,
+        peak_weight: float = 0.2,
+        effective_cost_cap: float = 0.0,
     ):
         super().__init__(env)
         base_env = env.unwrapped
@@ -130,6 +131,11 @@ class LagrangianWrapper(gym.Wrapper):
         self.n_constraints = 3
         self.cost_limit = np.array([v_tolerance, pq_limit, pq_limit], dtype=np.float32)
         self.peak_weight = float(np.clip(peak_weight, 0.0, 1.0))
+
+        if effective_cost_cap <= 0.0:
+            self._eff_cap = 10.0 * self.cost_limit   # shape (3,)
+        else:
+            self._eff_cap = np.full(self.n_constraints, float(effective_cost_cap))
 
         # FIX: assert di coerenza tra lambda_lr e n_envs
         if n_envs > 1 and lambda_lr > 0.0:
