@@ -151,7 +151,7 @@ class LagrangianWrapper(gym.Wrapper):
             self.lam = np.full(self.n_constraints, float(lambda_init_arr[0]), dtype=np.float32)
 
         self.episode_cost = np.zeros(self.n_constraints, dtype=np.float32)
-        self.episode_cost_max = np.zeros(self.n_constraints, dtype=np.float32)  # NEW
+        self.episode_cost_max = np.zeros(self.n_constraints, dtype=np.float32)
         self.episode_length = 0
 
     def get_lambda(self) -> np.ndarray:
@@ -343,62 +343,29 @@ class BatteryClipWrapper(gym.Wrapper):
             base_env = base_env.env
 
         action = np.array(action, dtype=np.float32)
-
         normalizer = self._find_normalizer()
         raw_action = (
             np.array(normalizer.rescale_action(action), dtype=np.float32)
-            if normalizer is not None
-            else action.copy()
+            if normalizer is not None else action.copy()
         )
 
-        delta_t_h, efficiency, power_limit_mw, soc_max_mwh, soc_min_mwh, current_soc_mwh = \
-            self._get_battery_params(base_env)
-
-        original_battery_p = None
+        # Only clip to physical power rating — let the simulator handle SoC limits
         if len(raw_action) > self.battery_action_idx:
-            battery_action = raw_action[self.battery_action_idx]
-            original_battery_p = float(battery_action)
-            clipped_battery_action = np.clip(battery_action, -power_limit_mw, power_limit_mw)
-
-            if clipped_battery_action > 0:  # Scarica
-                usable_energy_mwh = max(0.0, current_soc_mwh - soc_min_mwh)
-                max_discharge_power = (
-                    usable_energy_mwh * max(efficiency, 1e-6) / delta_t_h
-                    if delta_t_h > 0 else 0.0
-                )
-                max_discharge_power = min(max_discharge_power, power_limit_mw)
-                clipped_battery_action = min(clipped_battery_action, max_discharge_power)
-
-            elif clipped_battery_action < 0:  # Carica
-                max_energy_add = max(0.0, soc_max_mwh - current_soc_mwh)
-                max_charge_power = (
-                    max_energy_add / (delta_t_h * max(efficiency, 1e-6))
-                    if delta_t_h > 0 else 0.0
-                )
-                max_charge_power = min(max_charge_power, power_limit_mw)
-                clipped_battery_action = max(clipped_battery_action, -max_charge_power)
-
-            raw_action[self.battery_action_idx] = clipped_battery_action
-
-        # Azzera Q se la batteria è fisicamente ferma per vincoli SoC
-        battery_q_idx = self.battery_action_idx + 1
-
-        if len(raw_action) > battery_q_idx and original_battery_p is not None:
-            if abs(original_battery_p) < 1e-3:
-                raw_action[battery_q_idx] = 0.0
+            _, _, power_limit_mw, _, _, _ = self._get_battery_params(base_env)
+            raw_action[self.battery_action_idx] = np.clip(
+                raw_action[self.battery_action_idx],
+                -power_limit_mw,
+                power_limit_mw
+            )
 
         if normalizer is not None:
-            low = normalizer.low
-            high = normalizer.high
-            denom = high - low
-            denom = np.where(np.abs(denom) < 1e-8, 1.0, denom)
-            clipped_action = 2 * (raw_action - low) / denom - 1
-            clipped_action = np.clip(clipped_action, -1.0, 1.0)
+            low, high = normalizer.low, normalizer.high
+            denom = np.where(np.abs(high - low) < 1e-8, 1.0, high - low)
+            clipped_action = np.clip(2 * (raw_action - low) / denom - 1, -1.0, 1.0)
         else:
             clipped_action = raw_action
 
-        obs, reward, terminated, truncated, info = self.env.step(clipped_action)
-        return obs, reward, terminated, truncated, info
+        return self.env.step(clipped_action)
 
     def reset(self, seed=None, options=None):
         return self.env.reset(seed=seed, options=options)

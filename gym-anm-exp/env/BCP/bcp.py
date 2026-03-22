@@ -125,8 +125,8 @@ class BCP_base(ANMEnv):
         branch_ids = sorted(self.simulator.branches.keys())
 
         branch_overload_mva_max = 0.0
-        branch_overload_mwh = 0.0
-        branch_soft_penalty_mwh = 0.0
+        branch_overload_mvah = 0.0       # FIX: renamed from branch_overload_mwh → mvah (unit is MVAh)
+        branch_soft_penalty_mvah = 0.0   # FIX: renamed from branch_soft_penalty_mwh → mvah
         branch_loading = {}
 
         for br_id in branch_ids:
@@ -135,11 +135,11 @@ class BCP_base(ANMEnv):
             overload_mva = max(0.0, s_mva - s_max)
 
             branch_overload_mva_max = max(branch_overload_mva_max, overload_mva)
-            branch_overload_mwh += overload_mva * delta_t_h
-            branch_soft_penalty_mwh += max(0.0, s_mva - 0.8 * s_max) * delta_t_h
+            branch_overload_mvah += overload_mva * delta_t_h
+            branch_soft_penalty_mvah += max(0.0, s_mva - 0.8 * s_max) * delta_t_h
             branch_loading[br_id] = s_mva / max(s_max, 1e-6)
 
-        # Constraint costs (used by LagrangianWrapper) 
+        # Constraint costs (used by LagrangianWrapper)
         p_violation_pu_max = float(np.max(p_violation) / base_mva) if len(p_violation) > 0 else 0.0
         branch_overload_pu_max = float(branch_overload_mva_max / base_mva) if base_mva else 0.0
         if getattr(self, "include_branch_overload_in_constraints", True):
@@ -177,42 +177,33 @@ class BCP_base(ANMEnv):
         battery_p = float(dev_p_dict.get(3, 0.0))
         battery_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(3, 0.0))
 
-        # Battery cycling reward (asymmetric):
-        discharge_mwh = max(0.0,  battery_p) * delta_t_h   # battery_p > 0 → discharging
-        charge_mwh    = max(0.0, -battery_p) * delta_t_h   # battery_p < 0 → charging
-
-        # SoC management:
+        # SoC management
         SOC_RESERVE_MWH  = 20.0
         SOC_CEILING_MWH  = 80.0
         soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh) * delta_t_h
         soc_ceiling_excess_mwh    = max(0.0, battery_soc_mwh - SOC_CEILING_MWH) * delta_t_h
 
-        # Reactive power penalty
+        voltages_ok = bool(np.all((bus_v >= v_min) & (bus_v <= v_max)))
+        q_penalty_factor = 0.1 if voltages_ok else 1.0  # FIX: flipped from original
+
         controllable_q_ids = [
             i for i in device_ids
             if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")
         ]
         total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
-        voltages_ok = bool(np.all((bus_v >= v_min) & (bus_v <= v_max)))
-        q_penalty_factor = 1.0 if voltages_ok else 0.1
         q_magnitude_mvarh = total_q_mvar * delta_t_h * q_penalty_factor
 
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
         W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
-        W_SOC_RESERVE   = 2.0   # per MWh below reserve threshold
-        W_SOC_CEILING   = 2.0  # per MWh above ceiling threshold (raised from 5 → 15)
-        W_Q_MAGNITUDE   = 2.0   # per MVArh of unnecessary reactive power
-        W_BRANCH_SOFT   = 3.0   # per MVAh above 80% loading (soft congestion signal)
-        W_BRANCH_HARD   = 0.0   # intentionally 0: Lagrangian handles hard overloads
-        W_DISCHARGE     = 0.1   # reward per MWh discharged
-        W_CHARGE        = 0.02  # reward per MWh charged (smaller: charging is less urgent)
+        W_SOC_RESERVE   = 1.5   # per MWh below reserve threshold
+        W_SOC_CEILING   = 1.5   # per MWh above ceiling threshold  # FIX: removed stale comment
+        W_Q_MAGNITUDE   = 0.5   # per MVArh of unnecessary reactive power
+        W_BRANCH_SOFT   = 1.0   # per MVAh above 80% loading (soft congestion signal)
 
         curtailment_mwh   = curtailment_mw   * delta_t_h
         slack_import_mwh  = slack_import_mw  * delta_t_h
         slack_export_mwh  = slack_export_mw  * delta_t_h
-
-        battery_use_reward = W_DISCHARGE * discharge_mwh + W_CHARGE * charge_mwh
 
         r = r - (
             W_CURTAIL      * curtailment_mwh
@@ -221,40 +212,34 @@ class BCP_base(ANMEnv):
             + W_SOC_RESERVE  * soc_reserve_shortfall_mwh
             + W_SOC_CEILING  * soc_ceiling_excess_mwh
             + W_Q_MAGNITUDE  * q_magnitude_mvarh
-            + W_BRANCH_SOFT  * branch_soft_penalty_mwh
-            + W_BRANCH_HARD  * branch_overload_mwh   # always 0, kept for clarity
-        ) + battery_use_reward
+            + W_BRANCH_SOFT  * branch_soft_penalty_mvah
+        )
 
-        # ── Info dict ─────────────────────────────────────────────────────────────
         info["objective_costs"] = np.array(
             [
-                curtailment_mwh,
-                slack_import_mwh,
-                slack_export_mwh,
-                discharge_mwh,           # replaces cycle_mwh (unsigned discharge)
-                charge_mwh,              # separate charge tracking
-                soc_reserve_shortfall_mwh,
-                soc_ceiling_excess_mwh,
-                q_magnitude_mvarh,
-                branch_overload_mwh,
+                curtailment_mwh,              
+                slack_import_mwh,             
+                slack_export_mwh,       
+                soc_reserve_shortfall_mwh,    
+                soc_ceiling_excess_mwh,       
+                q_magnitude_mvarh,            
+                branch_overload_mvah,         
             ],
             dtype=np.float32,
         )
-        info["objective/cost_curtailment_mwh"]          = float(curtailment_mwh)
-        info["objective/cost_slack_import_mwh"]         = float(slack_import_mwh)
-        info["objective/cost_slack_export_mwh"]         = float(slack_export_mwh)
-        info["objective/reward_discharge_mwh"]          = float(discharge_mwh)
-        info["objective/reward_charge_mwh"]             = float(charge_mwh)
-        info["objective/cost_soc_reserve_shortfall_mwh"] = float(soc_reserve_shortfall_mwh)
-        info["objective/cost_soc_ceiling_excess_mwh"]   = float(soc_ceiling_excess_mwh)
-        info["objective/slack_p_mw"]                    = float(slack_p)
-        info["objective/curtailment_mw"]                = float(curtailment_mw)
-        info["objective/battery_soc_mwh"]               = float(battery_soc_mwh)
-        info["objective/cost_q_magnitude_mvarh"]        = float(q_magnitude_mvarh)
-        info["objective/q_penalty_factor"]              = float(q_penalty_factor)
-        info["objective/cost_branch_soft_mvah"]         = float(branch_soft_penalty_mwh)
-        info["objective/cost_branch_overload_mvah"]     = float(branch_overload_mwh)
-        info["branch_loading_pu"]                       = branch_loading
+        info["objective/cost_curtailment_mwh"]            = float(curtailment_mwh)
+        info["objective/cost_slack_import_mwh"]           = float(slack_import_mwh)
+        info["objective/cost_slack_export_mwh"]           = float(slack_export_mwh)
+        info["objective/cost_soc_reserve_shortfall_mwh"]  = float(soc_reserve_shortfall_mwh)
+        info["objective/cost_soc_ceiling_excess_mwh"]     = float(soc_ceiling_excess_mwh)
+        info["objective/slack_p_mw"]                      = float(slack_p)
+        info["objective/curtailment_mw"]                  = float(curtailment_mw)
+        info["objective/battery_soc_mwh"]                 = float(battery_soc_mwh)
+        info["objective/cost_q_magnitude_mvarh"]          = float(q_magnitude_mvarh)
+        info["objective/q_penalty_factor"]                = float(q_penalty_factor)
+        info["objective/cost_branch_soft_mvah"]           = float(branch_soft_penalty_mvah)  # FIX: renamed
+        info["objective/cost_branch_overload_mvah"]       = float(branch_overload_mvah)       # FIX: renamed
+        info["branch_loading_pu"]                         = branch_loading
 
         self.year_count = (self.date - self.date_init).days // 365
 

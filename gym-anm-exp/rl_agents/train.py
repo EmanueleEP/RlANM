@@ -68,7 +68,7 @@ def _make_train_env_factory(
             env = BatteryClipWrapper(env)
             if forecast_horizon and forecast_horizon > 0:
                 env = ForecastObsWrapper(env, horizon_steps=forecast_horizon)
-            env = Monitor(env, run_log_dir)
+
             if use_lagrangian:
                 effective_lr = 0.0 if (n_envs > 1) else lambda_lr
                 env = LagrangianWrapper(
@@ -88,6 +88,7 @@ def _make_train_env_factory(
                     w_q=standard_penalty_w_q,
                 )
             env = PFETerminateWrapper(env, penalty=pfe_penalty)
+            env = Monitor(env, run_log_dir)
             env.reset(seed=seed + rank)
             return env
         return _init
@@ -137,7 +138,7 @@ def main():
 
     V_TOLERANCE     = 1.0
     PQ_LIMIT        = 1.0    
-    LAMBDA_LR       = 0.05
+    LAMBDA_LR       = 0.005
     PEAK_WEIGHT = 0.2
 
     FORECAST_HORIZON_STEPS = 0
@@ -162,7 +163,7 @@ def main():
 
     continuing_training = os.path.exists(agent_path)
 
-    lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+    lambda_init_value = np.array([5.0, 5.0, 5.0], dtype=np.float32)
     if USE_LAGRANGIAN and continuing_training and os.path.exists(lambda_path):
         try:
             loaded = np.load(lambda_path).astype(np.float32)

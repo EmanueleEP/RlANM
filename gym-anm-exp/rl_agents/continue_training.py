@@ -77,7 +77,7 @@ if __name__ == '__main__':
     # ── Parameters (must match train.py) ──
     V_TOLERANCE = 0.01
     PQ_LIMIT = 0.01
-    LAMBDA_LR = 5e-2
+    LAMBDA_LR = 0.005
 
     NORM_OBS = True
     NORM_REWARD = True
