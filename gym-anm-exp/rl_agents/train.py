@@ -152,7 +152,7 @@ def main():
     NORM_OBS     = True
     NORM_REWARD  = True
     CLIP_OBS     = 10.0
-    CLIP_REWARD  = 200.0
+    CLIP_REWARD  = 50.0
 
     # Paths del checkpoint
     agent_path  = os.path.join(run_log_dir, "best_model.zip")
