@@ -19,7 +19,7 @@ import warnings
 
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from rl_agents.hyperparameters import (
     ENV_ID, MAX_EVAL_EP_LENGTH, USE_LAGRANGIAN,

@@ -137,7 +137,7 @@ def main():
 
     V_TOLERANCE     = 1.0
     PQ_LIMIT        = 1.0    
-    LAMBDA_LR       = 0.005
+    LAMBDA_LR       = 0.05
     PEAK_WEIGHT = 0.2
 
     FORECAST_HORIZON_STEPS = 0
