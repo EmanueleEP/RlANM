@@ -139,9 +139,7 @@ class BCP_base(ANMEnv):
             branch_soft_penalty_mwh += max(0.0, s_mva - 0.8 * s_max) * delta_t_h
             branch_loading[br_id] = s_mva / max(s_max, 1e-6)
 
-        # ── Constraint costs (used by LagrangianWrapper) ──────────────────────────
-        # P-channel combines device active power violations AND branch thermal overloads
-        # so that existing (3,) lambda checkpoints remain compatible.
+        # Constraint costs (used by LagrangianWrapper) 
         p_violation_pu_max = float(np.max(p_violation) / base_mva) if len(p_violation) > 0 else 0.0
         branch_overload_pu_max = float(branch_overload_mva_max / base_mva) if base_mva else 0.0
         if getattr(self, "include_branch_overload_in_constraints", True):
@@ -160,25 +158,8 @@ class BCP_base(ANMEnv):
         info["constraint/branch_overload_pu_max"] = branch_overload_pu_max
         info["pfe_converged"] = bool(getattr(self.simulator, "pfe_converged", True))
 
-        # ── Economic objective ────────────────────────────────────────────────────
-        #
-        # Goals:
-        #   1. Minimize renewable curtailment (use free local generation)
-        #   2. Maximize self-sufficiency (reduce slack/grid interaction)
-        #   3. Encourage battery cycling (charge when surplus, discharge when needed)
-        #   4. Discourage unnecessary reactive power (wastes apparent power capacity)
-        #   5. Soft branch loading penalty (pro-active congestion management)
-        #
-        # NOTE: Hard branch overload is intentionally NOT included here.
-        # It is fully handled by the Lagrangian multiplier (lambda_p) via
-        # info["constraint_costs"]. Double-penalizing it would prevent lambda
-        # from converging to a meaningful value.
-
         slack_p = float(dev_p_dict.get(0, 0.0))
 
-        # Slack interaction (asymmetric):
-        #   import (slack_p > 0): drawing from grid  → penalized at full weight
-        #   export (slack_p < 0): sending surplus out → penalized at reduced weight
         slack_import_mw = max(0.0, slack_p)
         slack_export_mw = max(0.0, -slack_p)
 
@@ -197,27 +178,16 @@ class BCP_base(ANMEnv):
         battery_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(3, 0.0))
 
         # Battery cycling reward (asymmetric):
-        #   Discharging is rewarded more than charging because it directly
-        #   serves loads and reduces slack import.
-        #   W_CYCLE has been removed — battery use reward replaces it entirely,
-        #   with a net positive incentive to cycle the battery.
         discharge_mwh = max(0.0,  battery_p) * delta_t_h   # battery_p > 0 → discharging
         charge_mwh    = max(0.0, -battery_p) * delta_t_h   # battery_p < 0 → charging
 
         # SoC management:
-        #   Reserve penalty  → keep some charge available at all times
-        #   Ceiling penalty  → discourage staying near full (blocks future charging)
-        #   Threshold lowered to 60 MWh (60% of 100 MWh capacity) so the agent
-        #   is pushed to discharge well before the battery is completely full.
-        SOC_RESERVE_MWH  = 10.0
-        SOC_CEILING_MWH  = 60.0
+        SOC_RESERVE_MWH  = 20.0
+        SOC_CEILING_MWH  = 80.0
         soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh) * delta_t_h
         soc_ceiling_excess_mwh    = max(0.0, battery_soc_mwh - SOC_CEILING_MWH) * delta_t_h
 
-        # Reactive power penalty:
-        #   Applied only when all bus voltages are within bounds.
-        #   If voltages are violated, Q injection may be legitimately needed for
-        #   support, so we relax the penalty to avoid conflicting signals.
+        # Reactive power penalty
         controllable_q_ids = [
             i for i in device_ids
             if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")
@@ -227,12 +197,11 @@ class BCP_base(ANMEnv):
         q_penalty_factor = 1.0 if voltages_ok else 0.1
         q_magnitude_mvarh = total_q_mvar * delta_t_h * q_penalty_factor
 
-        # ── Weights ───────────────────────────────────────────────────────────────
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
         W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
-        W_SOC_RESERVE   = 0.5   # per MWh below reserve threshold
-        W_SOC_CEILING   = 15.0  # per MWh above ceiling threshold (raised from 5 → 15)
+        W_SOC_RESERVE   = 2.0   # per MWh below reserve threshold
+        W_SOC_CEILING   = 2.0  # per MWh above ceiling threshold (raised from 5 → 15)
         W_Q_MAGNITUDE   = 2.0   # per MVArh of unnecessary reactive power
         W_BRANCH_SOFT   = 3.0   # per MVAh above 80% loading (soft congestion signal)
         W_BRANCH_HARD   = 0.0   # intentionally 0: Lagrangian handles hard overloads
