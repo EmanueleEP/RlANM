@@ -174,14 +174,13 @@ class BCP_base(ANMEnv):
             curtailment_mw += max(0.0, p_potential - p_actual)
 
         # Battery state
-        battery_p = float(dev_p_dict.get(3, 0.0))
         battery_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(3, 0.0))
 
         # SoC management
-        SOC_RESERVE_MWH  = 20.0
-        SOC_CEILING_MWH  = 80.0
-        soc_reserve_shortfall_mwh = max(0.0, SOC_RESERVE_MWH - battery_soc_mwh) * delta_t_h
-        soc_ceiling_excess_mwh    = max(0.0, battery_soc_mwh - SOC_CEILING_MWH) * delta_t_h
+        soc_max_mwh = float(self.simulator.devices[3].soc_max) * float(self.simulator.baseMVA)
+        soc_target_mwh = soc_max_mwh / 2.0   # midpoint = maximum flexibility
+        soc_deviation = (battery_soc_mwh - soc_target_mwh) / max(soc_target_mwh, 1e-8)
+        soc_shape_mwh = (soc_deviation ** 2) * delta_t_h
 
         voltages_ok = bool(np.all((bus_v >= v_min) & (bus_v <= v_max)))
         q_penalty_factor = 0.1 if voltages_ok else 1.0  # FIX: flipped from original
@@ -196,8 +195,7 @@ class BCP_base(ANMEnv):
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
         W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
-        W_SOC_RESERVE   = 1.5   # per MWh below reserve threshold
-        W_SOC_CEILING   = 1.5   # per MWh above ceiling threshold  # FIX: removed stale comment
+        W_SOC_SHAPE     = 3.0   # quadratic penalty shaping for SoC deviations (both reserve shortfall and ceiling excess)
         W_Q_MAGNITUDE   = 0.5   # per MVArh of unnecessary reactive power
         W_BRANCH_SOFT   = 1.0   # per MVAh above 80% loading (soft congestion signal)
 
@@ -209,8 +207,7 @@ class BCP_base(ANMEnv):
             W_CURTAIL      * curtailment_mwh
             + W_SLACK_IMPORT * slack_import_mwh
             + W_SLACK_EXPORT * slack_export_mwh
-            + W_SOC_RESERVE  * soc_reserve_shortfall_mwh
-            + W_SOC_CEILING  * soc_ceiling_excess_mwh
+            + W_SOC_SHAPE    * soc_shape_mwh
             + W_Q_MAGNITUDE  * q_magnitude_mvarh
             + W_BRANCH_SOFT  * branch_soft_penalty_mvah
         )
@@ -220,8 +217,7 @@ class BCP_base(ANMEnv):
                 curtailment_mwh,              
                 slack_import_mwh,             
                 slack_export_mwh,       
-                soc_reserve_shortfall_mwh,    
-                soc_ceiling_excess_mwh,       
+                soc_shape_mwh,       
                 q_magnitude_mvarh,            
                 branch_overload_mvah,         
             ],
@@ -230,11 +226,12 @@ class BCP_base(ANMEnv):
         info["objective/cost_curtailment_mwh"]            = float(curtailment_mwh)
         info["objective/cost_slack_import_mwh"]           = float(slack_import_mwh)
         info["objective/cost_slack_export_mwh"]           = float(slack_export_mwh)
-        info["objective/cost_soc_reserve_shortfall_mwh"]  = float(soc_reserve_shortfall_mwh)
-        info["objective/cost_soc_ceiling_excess_mwh"]     = float(soc_ceiling_excess_mwh)
         info["objective/slack_p_mw"]                      = float(slack_p)
         info["objective/curtailment_mw"]                  = float(curtailment_mw)
         info["objective/battery_soc_mwh"]                 = float(battery_soc_mwh)
+        info["objective/cost_soc_shape_mwh"]              = float(soc_shape_mwh)
+        info["objective/soc_target_mwh"]                  = float(soc_target_mwh)
+        info["objective/soc_deviation_normalized"]        = float(soc_deviation)
         info["objective/cost_q_magnitude_mvarh"]          = float(q_magnitude_mvarh)
         info["objective/q_penalty_factor"]                = float(q_penalty_factor)
         info["objective/cost_branch_soft_mvah"]           = float(branch_soft_penalty_mvah)  # FIX: renamed

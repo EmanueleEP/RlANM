@@ -338,6 +338,7 @@ class BatteryClipWrapper(gym.Wrapper):
         return delta_t_h, efficiency, power_limit_mw, soc_max_mwh, soc_min_mwh, current_soc_mwh
 
     def step(self, action):
+        #print(f"[DEBUG] action space shape: {self.env.action_space.shape}, battery_idx: {self.battery_action_idx}")
         base_env = self.env
         while hasattr(base_env, "env"):
             base_env = base_env.env
@@ -349,13 +350,24 @@ class BatteryClipWrapper(gym.Wrapper):
             if normalizer is not None else action.copy()
         )
 
-        # Only clip to physical power rating — let the simulator handle SoC limits
         if len(raw_action) > self.battery_action_idx:
-            _, _, power_limit_mw, _, _, _ = self._get_battery_params(base_env)
+            delta_t_h, efficiency, power_limit_mw, soc_max_mwh, soc_min_mwh, current_soc_mwh = \
+                self._get_battery_params(base_env)
+
+            # Max discharge (P > 0): limited by how much energy is currently stored.
+            # delta_SoC = -P * delta_t / eff  =>  P_max = (soc - soc_min) * eff / delta_t
+            max_discharge_mw = (current_soc_mwh - soc_min_mwh) * efficiency / max(delta_t_h, 1e-8)
+            max_discharge_mw = float(np.clip(max_discharge_mw, 0.0, power_limit_mw))
+
+            # Max charge (P < 0): limited by remaining capacity.
+            # delta_SoC = |P| * delta_t * eff  =>  |P|_max = (soc_max - soc) / (eff * delta_t)
+            max_charge_mw = (soc_max_mwh - current_soc_mwh) / (efficiency * max(delta_t_h, 1e-8))
+            max_charge_mw = float(np.clip(max_charge_mw, 0.0, power_limit_mw))
+
             raw_action[self.battery_action_idx] = np.clip(
                 raw_action[self.battery_action_idx],
-                -power_limit_mw,
-                power_limit_mw
+                -max_charge_mw,    # negative = charging
+                max_discharge_mw,  # positive = discharging
             )
 
         if normalizer is not None:
@@ -367,8 +379,8 @@ class BatteryClipWrapper(gym.Wrapper):
 
         return self.env.step(clipped_action)
 
-    def reset(self, seed=None, options=None):
-        return self.env.reset(seed=seed, options=options)
+        def reset(self, seed=None, options=None):
+            return self.env.reset(seed=seed, options=options)
 
 
 class StandardPenaltyWrapper(gym.Wrapper):

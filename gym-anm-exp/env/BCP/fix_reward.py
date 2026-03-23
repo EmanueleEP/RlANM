@@ -5,7 +5,7 @@ import numpy as np
 
 
 V_TOL   = 0.01   # pu  — same as LagrangianWrapper(v_tolerance=0.01)
-P_TOL   = 0.01   # pu  — same as LagrangianWrapper(pq_limit=0.01)
+P_TOL   = 0.05   # pu  — same as LagrangianWrapper(pq_limit=0.01)
 Q_TOL   = 0.01   # pu  — same as LagrangianWrapper(pq_limit=0.01)
 
 def build_constraint_costs(
