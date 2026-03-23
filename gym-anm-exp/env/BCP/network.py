@@ -64,7 +64,7 @@ _device_rows = np.array(
         [0, 0, 0, _NaN, 200, -200, 200, -200, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN],  # slack
         [1, 2, -1, 0.2, 0, -20, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN, _NaN],  # load
         [2, 2, 2, _NaN, 30, 0, 30, -30, 20, _NaN, 15, -15, _NaN, _NaN, _NaN], # solar
-        [3, 2, 3, _NaN, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0.1, 0.9],  # battery
+        [3, 2, 3, _NaN, 50, -50, 50, -50, 30, -30, 25, -25, 100, 0.0, 0.9],  # battery
     ],
     dtype=np.float64,
 )

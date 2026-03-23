@@ -72,10 +72,6 @@ class BCP_base(ANMEnv):
     def step(self, action):
         obs, r, terminated, truncated, info = super().step(action)
 
-        r = 0.0  # Completely replaces ANMEnv reward with custom economic objective.
-                 # Constraint penalties are handled externally by LagrangianWrapper.
-                 # lamb=0 in BCP disables ANMEnv's own penalty term.
-
         self.date += self.timestep_length
 
         full_state = self.simulator.state or {}
@@ -125,8 +121,8 @@ class BCP_base(ANMEnv):
         branch_ids = sorted(self.simulator.branches.keys())
 
         branch_overload_mva_max = 0.0
-        branch_overload_mvah = 0.0       # FIX: renamed from branch_overload_mwh → mvah (unit is MVAh)
-        branch_soft_penalty_mvah = 0.0   # FIX: renamed from branch_soft_penalty_mwh → mvah
+        branch_overload_mvah = 0.0
+        branch_soft_penalty_mvah = 0.0
         branch_loading = {}
 
         for br_id in branch_ids:
@@ -203,15 +199,6 @@ class BCP_base(ANMEnv):
         slack_import_mwh  = slack_import_mw  * delta_t_h
         slack_export_mwh  = slack_export_mw  * delta_t_h
 
-        r = r - (
-            W_CURTAIL      * curtailment_mwh
-            + W_SLACK_IMPORT * slack_import_mwh
-            + W_SLACK_EXPORT * slack_export_mwh
-            + W_SOC_SHAPE    * soc_shape_mwh
-            + W_Q_MAGNITUDE  * q_magnitude_mvarh
-            + W_BRANCH_SOFT  * branch_soft_penalty_mvah
-        )
-
         info["objective_costs"] = np.array(
             [
                 curtailment_mwh,              
@@ -234,8 +221,8 @@ class BCP_base(ANMEnv):
         info["objective/soc_deviation_normalized"]        = float(soc_deviation)
         info["objective/cost_q_magnitude_mvarh"]          = float(q_magnitude_mvarh)
         info["objective/q_penalty_factor"]                = float(q_penalty_factor)
-        info["objective/cost_branch_soft_mvah"]           = float(branch_soft_penalty_mvah)  # FIX: renamed
-        info["objective/cost_branch_overload_mvah"]       = float(branch_overload_mvah)       # FIX: renamed
+        info["objective/cost_branch_soft_mvah"]           = float(branch_soft_penalty_mvah)
+        info["objective/cost_branch_overload_mvah"]       = float(branch_overload_mvah)    
         info["branch_loading_pu"]                         = branch_loading
 
         self.year_count = (self.date - self.date_init).days // 365

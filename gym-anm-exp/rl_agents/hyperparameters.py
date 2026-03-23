@@ -46,9 +46,10 @@ MAX_EVAL_EP_LENGTH = 3000
 N_ENVS = 1 
 
 USE_LAGRANGIAN = True  
-# If True, branch thermal overload is included in `constraint_costs` (P-channel)
+# If True, branch thermal overload is included in constraint_costs 
 # and therefore enforced by the LagrangianWrapper. If False, it is still logged
 # via `constraint/branch_overload_pu_max` but not part of the dual update.
+
 INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS = True
 
 # Fixed penalty weights for StandardPenaltyWrapper (used when USE_LAGRANGIAN=False).

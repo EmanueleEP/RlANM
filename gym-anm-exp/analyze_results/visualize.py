@@ -34,12 +34,6 @@ from rl_agents.wrappers import (
 
 import faulthandler
 faulthandler.enable()
-import multiprocessing
-if hasattr(multiprocessing, "set_start_method"):
-    try:
-        multiprocessing.set_start_method("fork", force=True)
-    except Exception:
-        pass
 
 import tty, termios
 
@@ -83,8 +77,9 @@ def _validate_policy_architecture(model, env):
 
 def _load_model_safe(algo_class, zip_path: str, env, device: str):
     try:
-        model = algo_class.load(zip_path, env=env, device=device)
-        print("[load_model] Load standard SB3: OK")
+        model = algo_class.load(zip_path, env=env, device=device, 
+                                custom_objects={"learning_rate": 3e-4,
+                                                "clip_range": 0.2})
         _validate_policy_architecture(model, env)
         return model
     except Exception as e:

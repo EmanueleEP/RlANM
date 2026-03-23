@@ -8,7 +8,7 @@ from .bcp import BCP_base
 profiles_path = "env/BCP/daysHoursPQ.txt"
 
 
-_LAMB = 0 
+_LAMB = 100 
 
 class BCP(BCP_base):
     """The :code:`BCP-v0` task."""
