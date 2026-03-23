@@ -178,15 +178,12 @@ class BCP_base(ANMEnv):
         soc_deviation = (battery_soc_mwh - soc_target_mwh) / max(soc_target_mwh, 1e-8)
         soc_shape_mwh = (soc_deviation ** 2) * delta_t_h
 
-        voltages_ok = bool(np.all((bus_v >= v_min) & (bus_v <= v_max)))
-        q_penalty_factor = 0.1 if voltages_ok else 1.0  # FIX: flipped from original
-
         controllable_q_ids = [
             i for i in device_ids
             if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")
         ]
         total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
-        q_magnitude_mvarh = total_q_mvar * delta_t_h * q_penalty_factor
+        q_magnitude_mvarh = total_q_mvar * delta_t_h
 
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
@@ -220,10 +217,23 @@ class BCP_base(ANMEnv):
         info["objective/soc_target_mwh"]                  = float(soc_target_mwh)
         info["objective/soc_deviation_normalized"]        = float(soc_deviation)
         info["objective/cost_q_magnitude_mvarh"]          = float(q_magnitude_mvarh)
-        info["objective/q_penalty_factor"]                = float(q_penalty_factor)
         info["objective/cost_branch_soft_mvah"]           = float(branch_soft_penalty_mvah)
-        info["objective/cost_branch_overload_mvah"]       = float(branch_overload_mvah)    
+        info["objective/cost_branch_overload_mvah"]       = float(branch_overload_mvah)
         info["branch_loading_pu"]                         = branch_loading
+
+        # Override base ANMEnv reward with BCP-specific objective.
+        # The base reward -(e_loss + penalty) is discarded because e_loss is clipped
+        # to (1, 100) and gives almost no signal about curtailment, import, or SOC.
+        # Constraint penalties are added downstream by Lagrangian/StandardPenaltyWrapper.
+        info["reward_base_anm"] = float(r)
+        r = -(
+            W_CURTAIL      * curtailment_mwh
+            + W_SLACK_IMPORT * slack_import_mwh
+            + W_SLACK_EXPORT * slack_export_mwh
+            + W_SOC_SHAPE    * soc_shape_mwh
+            + W_Q_MAGNITUDE  * q_magnitude_mvarh
+            + W_BRANCH_SOFT  * branch_soft_penalty_mvah
+        )
 
         self.year_count = (self.date - self.date_init).days // 365
 
