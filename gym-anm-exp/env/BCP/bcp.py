@@ -172,11 +172,17 @@ class BCP_base(ANMEnv):
         # Battery state
         battery_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(3, 0.0))
 
-        # SoC management
+        # SoC management — boundary penalty (soft walls at 15% and 85%)
         soc_max_mwh = float(self.simulator.devices[3].soc_max) * float(self.simulator.baseMVA)
-        soc_target_mwh = soc_max_mwh / 2.0   # midpoint = maximum flexibility
-        soc_deviation = (battery_soc_mwh - soc_target_mwh) / max(soc_target_mwh, 1e-8)
-        soc_shape_mwh = (soc_deviation ** 2) * delta_t_h
+        soc_fraction = battery_soc_mwh / max(soc_max_mwh, 1e-8)
+        SOC_LOW = 0.15
+        SOC_HIGH = 0.95
+        if soc_fraction < SOC_LOW:
+            soc_boundary_cost = ((SOC_LOW - soc_fraction) / SOC_LOW) ** 2 * delta_t_h
+        elif soc_fraction > SOC_HIGH:
+            soc_boundary_cost = ((soc_fraction - SOC_HIGH) / (1.0 - SOC_HIGH)) ** 2 * delta_t_h
+        else:
+            soc_boundary_cost = 0.0
 
         controllable_q_ids = [
             i for i in device_ids
@@ -188,7 +194,7 @@ class BCP_base(ANMEnv):
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
         W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
-        W_SOC_SHAPE     = 20.0  # quadratic penalty shaping for SoC deviations (both reserve shortfall and ceiling excess)
+        W_SOC_BOUNDARY  = 30.0  # quadratic penalty near SoC boundaries (below 15% or above 85%)
         W_Q_MAGNITUDE   = 0.5   # per MVArh of unnecessary reactive power
         W_BRANCH_SOFT   = 1.0   # per MVAh above 80% loading (soft congestion signal)
 
@@ -201,7 +207,7 @@ class BCP_base(ANMEnv):
                 curtailment_mwh,              
                 slack_import_mwh,             
                 slack_export_mwh,       
-                soc_shape_mwh,       
+                soc_boundary_cost,
                 q_magnitude_mvarh,            
                 branch_overload_mvah,         
             ],
@@ -213,9 +219,8 @@ class BCP_base(ANMEnv):
         info["objective/slack_p_mw"]                      = float(slack_p)
         info["objective/curtailment_mw"]                  = float(curtailment_mw)
         info["objective/battery_soc_mwh"]                 = float(battery_soc_mwh)
-        info["objective/cost_soc_shape_mwh"]              = float(soc_shape_mwh)
-        info["objective/soc_target_mwh"]                  = float(soc_target_mwh)
-        info["objective/soc_deviation_normalized"]        = float(soc_deviation)
+        info["objective/cost_soc_boundary"]               = float(soc_boundary_cost)
+        info["objective/soc_fraction"]                    = float(soc_fraction)
         info["objective/cost_q_magnitude_mvarh"]          = float(q_magnitude_mvarh)
         info["objective/cost_branch_soft_mvah"]           = float(branch_soft_penalty_mvah)
         info["objective/cost_branch_overload_mvah"]       = float(branch_overload_mvah)
@@ -230,7 +235,7 @@ class BCP_base(ANMEnv):
             W_CURTAIL      * curtailment_mwh
             + W_SLACK_IMPORT * slack_import_mwh
             + W_SLACK_EXPORT * slack_export_mwh
-            + W_SOC_SHAPE    * soc_shape_mwh
+            + W_SOC_BOUNDARY * soc_boundary_cost
             + W_Q_MAGNITUDE  * q_magnitude_mvarh
             + W_BRANCH_SOFT  * branch_soft_penalty_mvah
         )

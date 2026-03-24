@@ -31,26 +31,26 @@ for agent_group in agent_groups:
             d = np.load(f)
             timesteps.append(d['timesteps'])
             
-            # Handle different array shapes
+            # Average across eval episodes (axis=1) when shape is (n_evals, n_episodes)
             results_data = d['results']
             if results_data.ndim == 3:
-                results.append(results_data[:, 0, 0])
+                results.append(np.mean(results_data, axis=(1, 2)))
             elif results_data.ndim == 2:
-                results.append(results_data[:, 0])
+                results.append(np.mean(results_data, axis=1))
             else:
                 results.append(results_data)
-            
+
             discounted_data = d['discounted_results']
             if discounted_data.ndim == 3:
-                discounted_results.append(discounted_data[:, 0, 0])
+                discounted_results.append(np.mean(discounted_data, axis=(1, 2)))
             elif discounted_data.ndim == 2:
-                discounted_results.append(discounted_data[:, 0])
+                discounted_results.append(np.mean(discounted_data, axis=1))
             else:
                 discounted_results.append(discounted_data)
-            
+
             ep_len_data = d['ep_lengths']
             if ep_len_data.ndim == 2:
-                ep_lengths.append(ep_len_data[:, 0])
+                ep_lengths.append(np.mean(ep_len_data, axis=1))
             else:
                 ep_lengths.append(ep_len_data)
                 
