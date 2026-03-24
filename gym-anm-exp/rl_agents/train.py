@@ -106,7 +106,7 @@ def _make_eval_env_factory(
                 env.include_branch_overload_in_constraints = bool(include_branch_overload)
             env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
             env = NormalizeActionWrapper(env)
-            env = BatteryClipWrapper(env)
+            env = BatteryClipWrapper(env, clip_penalty_weight=0.0)
             if forecast_horizon and forecast_horizon > 0:
                 env = ForecastObsWrapper(env, horizon_steps=forecast_horizon)
             env = PFETerminateWrapper(env, penalty=pfe_penalty)
@@ -286,10 +286,12 @@ def main():
                 target_kl=PPO_TARGET_KL,
             )
         else:  # SAC
+            SAC_LR = 3e-4
             model = SAC(
                 POLICY, train_env, gamma=GAMMA, verbose=1,
                 tensorboard_log=tensorboard_log, device=device,
-                learning_rate=_linear_schedule(PPO_LR_INITIAL, PPO_LR_FINAL),
+                learning_rate=SAC_LR,
+                ent_coef="auto",
             )
 
     # Training

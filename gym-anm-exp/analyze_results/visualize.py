@@ -25,7 +25,6 @@ from rl_agents.hyperparameters import (
     ENV_ID, MAX_EVAL_EP_LENGTH, USE_LAGRANGIAN,
     STANDARD_PENALTY_W_V, STANDARD_PENALTY_W_P, STANDARD_PENALTY_W_Q,
 )
-from rl_agents.utils import load_visualization_env
 from rl_agents.wrappers import (
     LagrangianWrapper, StandardPenaltyWrapper,
     TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper,
@@ -393,7 +392,7 @@ def make_env(env_id, vec_env_path, wrappers=True):
         if wrappers:
             env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
-            env = BatteryClipWrapper(env)
+            env = BatteryClipWrapper(env, clip_penalty_weight=0.0)
             if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
                 env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
             if USE_LAGRANGIAN:

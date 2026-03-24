@@ -119,7 +119,6 @@ class LagrangianWrapper(gym.Wrapper):
         lambda_max: float = 50.0,
         n_envs: int = 1,
         peak_weight: float = 0.2,
-        effective_cost_cap: float = 0.0,
     ):
         super().__init__(env)
         base_env = env.unwrapped
@@ -131,11 +130,6 @@ class LagrangianWrapper(gym.Wrapper):
         self.n_constraints = 3
         self.cost_limit = np.array([v_tolerance, pq_limit, pq_limit], dtype=np.float32)
         self.peak_weight = float(np.clip(peak_weight, 0.0, 1.0))
-
-        if effective_cost_cap <= 0.0:
-            self._eff_cap = 10.0 * self.cost_limit   # shape (3,)
-        else:
-            self._eff_cap = np.full(self.n_constraints, float(effective_cost_cap))
 
         # FIX: assert di coerenza tra lambda_lr e n_envs
         if n_envs > 1 and lambda_lr > 0.0:
@@ -226,7 +220,7 @@ class LagrangianWrapper(gym.Wrapper):
             + self.peak_weight * self.episode_cost_max
         )
 
-        gradient = avg_cost - self.cost_limit
+        gradient = effective_cost - self.cost_limit
         self.lam = np.clip(self.lam + self.lambda_lr * gradient, 0.0, self.lambda_max)
         
         print(
@@ -247,19 +241,39 @@ class BatteryClipWrapper(gym.Wrapper):
     _FALLBACK_EFFICIENCY      = 0.9
     _FALLBACK_DELTA_T_H       = 0.25
 
-    def __init__(self, env):
+    def __init__(self, env, clip_penalty_weight: float = 10.0):
         super().__init__(env)
         self.battery_action_idx = 2
+        self._battery_device_id = 3
+        self._clip_penalty_weight = float(clip_penalty_weight)
+        # Cached static params (populated on first step)
+        self._static_cached = False
+        self._delta_t_h = self._FALLBACK_DELTA_T_H
+        self._efficiency = self._FALLBACK_EFFICIENCY
+        self._power_limit_mw = self._FALLBACK_POWER_LIMIT_MW
+        self._soc_max_mwh = self._FALLBACK_SOC_MAX_MWH
+        self._soc_min_mwh = self._FALLBACK_SOC_MIN_MWH
+        # Cached normalizer reference
+        self._normalizer = None
+        self._normalizer_cached = False
 
     def _find_normalizer(self):
+        if self._normalizer_cached:
+            return self._normalizer
         env = self.env
         while env is not None:
             if isinstance(env, NormalizeActionWrapper):
+                self._normalizer = env
+                self._normalizer_cached = True
                 return env
             env = getattr(env, "env", None)
+        self._normalizer_cached = True
         return None
 
-    def _get_battery_params(self, base_env):
+    def _cache_static_params(self, base_env):
+        """Read static battery parameters once from the simulator and cache them."""
+        if self._static_cached:
+            return
 
         using_fallback = []
 
@@ -268,20 +282,15 @@ class BatteryClipWrapper(gym.Wrapper):
             using_fallback.append(f"delta_t_h={self._FALLBACK_DELTA_T_H} (not found in base_env.delta_t)")
             delta_t_h = self._FALLBACK_DELTA_T_H
 
-        battery_device_id = 3
-        power_limit_mw  = None
-        soc_max_mwh     = None
-        soc_min_mwh     = None
-        efficiency      = None
-        current_soc_mwh = 0.0
+        dev_id = self._battery_device_id
+        power_limit_mw = None
+        soc_max_mwh = None
+        soc_min_mwh = None
+        efficiency = None
 
-        if hasattr(base_env, "simulator") and getattr(base_env.simulator, "state", None) is not None:
-            full_state = base_env.simulator.state
-            current_soc_mwh = float(
-                full_state.get("des_soc", {}).get("MWh", {}).get(battery_device_id, 0.0)
-            )
+        if hasattr(base_env, "simulator"):
             base_mva = float(getattr(base_env.simulator, "baseMVA", 0.0))
-            dev = getattr(base_env.simulator, "devices", {}).get(battery_device_id, None)
+            dev = getattr(base_env.simulator, "devices", {}).get(dev_id, None)
 
             if dev is not None and base_mva > 0:
                 power_limit_mw = float(getattr(dev, "p_max", None) or 0.0) * base_mva
@@ -311,21 +320,17 @@ class BatteryClipWrapper(gym.Wrapper):
                     soc_min_mwh = 0.0
             else:
                 using_fallback.append(
-                    f"all battery parameters (device {battery_device_id} "
+                    f"all battery parameters (device {dev_id} "
                     f"not found or baseMVA={base_mva:.1f})"
                 )
         else:
             using_fallback.append("all battery parameters (simulator not accessible)")
 
-        # Applica fallback per i parametri non letti
-        if power_limit_mw is None:
-            power_limit_mw = self._FALLBACK_POWER_LIMIT_MW
-        if soc_max_mwh is None:
-            soc_max_mwh = self._FALLBACK_SOC_MAX_MWH
-        if soc_min_mwh is None:
-            soc_min_mwh = self._FALLBACK_SOC_MIN_MWH
-        if efficiency is None:
-            efficiency = self._FALLBACK_EFFICIENCY
+        self._delta_t_h = delta_t_h
+        self._efficiency = efficiency if efficiency is not None else self._FALLBACK_EFFICIENCY
+        self._power_limit_mw = power_limit_mw if power_limit_mw is not None else self._FALLBACK_POWER_LIMIT_MW
+        self._soc_max_mwh = soc_max_mwh if soc_max_mwh is not None else self._FALLBACK_SOC_MAX_MWH
+        self._soc_min_mwh = soc_min_mwh if soc_min_mwh is not None else self._FALLBACK_SOC_MIN_MWH
 
         if using_fallback:
             warnings.warn(
@@ -335,13 +340,23 @@ class BatteryClipWrapper(gym.Wrapper):
                 stacklevel=3,
             )
 
-        return delta_t_h, efficiency, power_limit_mw, soc_max_mwh, soc_min_mwh, current_soc_mwh
+        self._static_cached = True
+
+    def _get_current_soc(self, base_env):
+        """Read only the dynamic SoC value from the simulator state."""
+        if hasattr(base_env, "simulator") and getattr(base_env.simulator, "state", None) is not None:
+            return float(
+                base_env.simulator.state.get("des_soc", {}).get("MWh", {}).get(self._battery_device_id, 0.0)
+            )
+        return 0.0
 
     def step(self, action):
-        #print(f"[DEBUG] action space shape: {self.env.action_space.shape}, battery_idx: {self.battery_action_idx}")
         base_env = self.env
         while hasattr(base_env, "env"):
             base_env = base_env.env
+
+        # Cache static params on first call
+        self._cache_static_params(base_env)
 
         action = np.array(action, dtype=np.float32)
         normalizer = self._find_normalizer()
@@ -350,25 +365,31 @@ class BatteryClipWrapper(gym.Wrapper):
             if normalizer is not None else action.copy()
         )
 
+        clip_fraction = 0.0  # 0 = no clip, 1 = fully clipped
+
         if len(raw_action) > self.battery_action_idx:
-            delta_t_h, efficiency, power_limit_mw, soc_max_mwh, soc_min_mwh, current_soc_mwh = \
-                self._get_battery_params(base_env)
+            current_soc_mwh = self._get_current_soc(base_env)
+            intended_mw = float(raw_action[self.battery_action_idx])
 
             # Max discharge (P > 0): limited by how much energy is currently stored.
             # delta_SoC = -P * delta_t / eff  =>  P_max = (soc - soc_min) * eff / delta_t
-            max_discharge_mw = (current_soc_mwh - soc_min_mwh) * efficiency / max(delta_t_h, 1e-8)
-            max_discharge_mw = float(np.clip(max_discharge_mw, 0.0, power_limit_mw))
+            max_discharge_mw = (current_soc_mwh - self._soc_min_mwh) * self._efficiency / max(self._delta_t_h, 1e-8)
+            max_discharge_mw = float(np.clip(max_discharge_mw, 0.0, self._power_limit_mw))
 
             # Max charge (P < 0): limited by remaining capacity.
             # delta_SoC = |P| * delta_t * eff  =>  |P|_max = (soc_max - soc) / (eff * delta_t)
-            max_charge_mw = (soc_max_mwh - current_soc_mwh) / (efficiency * max(delta_t_h, 1e-8))
-            max_charge_mw = float(np.clip(max_charge_mw, 0.0, power_limit_mw))
+            max_charge_mw = (self._soc_max_mwh - current_soc_mwh) / (self._efficiency * max(self._delta_t_h, 1e-8))
+            max_charge_mw = float(np.clip(max_charge_mw, 0.0, self._power_limit_mw))
 
             raw_action[self.battery_action_idx] = np.clip(
                 raw_action[self.battery_action_idx],
                 -max_charge_mw,    # negative = charging
                 max_discharge_mw,  # positive = discharging
             )
+
+            executed_mw = float(raw_action[self.battery_action_idx])
+            if abs(intended_mw) > 1e-6:
+                clip_fraction = abs(intended_mw - executed_mw) / abs(intended_mw)
 
         if normalizer is not None:
             low, high = normalizer.low, normalizer.high
@@ -377,10 +398,19 @@ class BatteryClipWrapper(gym.Wrapper):
         else:
             clipped_action = raw_action
 
-        return self.env.step(clipped_action)
+        obs, reward, terminated, truncated, info = self.env.step(clipped_action)
 
-        def reset(self, seed=None, options=None):
-            return self.env.reset(seed=seed, options=options)
+        # Penalize infeasible battery actions so the agent learns SoC limits
+        clip_penalty = self._clip_penalty_weight * clip_fraction
+        reward = float(reward) - clip_penalty
+
+        info["battery_clip/fraction"] = clip_fraction
+        info["battery_clip/penalty"] = clip_penalty
+
+        return obs, reward, terminated, truncated, info
+
+    def reset(self, seed=None, options=None):
+        return self.env.reset(seed=seed, options=options)
 
 
 class StandardPenaltyWrapper(gym.Wrapper):

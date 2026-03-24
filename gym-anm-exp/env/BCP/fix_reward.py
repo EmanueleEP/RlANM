@@ -4,9 +4,13 @@
 import numpy as np
 
 
-V_TOL   = 0.01   # pu  — same as LagrangianWrapper(v_tolerance=0.01)
-P_TOL   = 0.05   # pu  — same as LagrangianWrapper(pq_limit=0.01)
-Q_TOL   = 0.01   # pu  — same as LagrangianWrapper(pq_limit=0.01)
+V_TOL   = 0.01   # pu  — normalizes raw voltage violation before LagrangianWrapper
+P_TOL   = 0.05   # pu  — normalizes raw P/branch violation before LagrangianWrapper
+Q_TOL   = 0.01   # pu  — normalizes raw Q violation before LagrangianWrapper
+# NOTE: These tolerances normalize constraint_costs BEFORE they reach the wrapper.
+# LagrangianWrapper.cost_limit (set via v_tolerance/pq_limit in train.py) then
+# determines the threshold at which lambda starts growing. Both sets of values
+# must be considered together when tuning constraint sensitivity.
 
 def build_constraint_costs(
     v_violation_pu_max: float,

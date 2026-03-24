@@ -27,7 +27,15 @@ from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 
 import torch
-from .hyperparameters import *
+
+from .hyperparameters import (
+    ENV_ID, GAMMA, POLICY, EVAL_FREQ, N_EVAL_EPISODES,
+    MAX_TRAINING_EP_LENGTH, MAX_EVAL_EP_LENGTH, TB_LOG_NAME,
+    USE_LAGRANGIAN, N_ENVS,
+    STANDARD_PENALTY_W_V, STANDARD_PENALTY_W_P, STANDARD_PENALTY_W_Q,
+    INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
+    TRAIN_STEPS as _DEFAULT_TRAIN_STEPS,
+)
 from .callbacks import ProgressBarManager, EvalCallback
 from .utils import parse_args
 from .wrappers import (
@@ -42,6 +50,17 @@ from .wrappers import (
 from .lambda_sync_callback import LambdaSyncCallback
 from .exploration_callbacks import BatteryExplorationCallback
 from .step_logger_callback import StepLoggerCallback
+
+
+def _linear_schedule(initial_value: float, final_value: float = 0.0):
+    initial_value = float(initial_value)
+    final_value = float(final_value)
+
+    def func(progress_remaining: float) -> float:
+        return final_value + progress_remaining * (initial_value - final_value)
+
+    return func
+
 
 if __name__ == '__main__':
 
@@ -74,10 +93,11 @@ if __name__ == '__main__':
 
     print(f"Continuing training from {AGENT_PATH}")
 
-    # ── Parameters (must match train.py) ──
-    V_TOLERANCE = 0.01
-    PQ_LIMIT = 0.01
-    LAMBDA_LR = 0.005
+    # ── Parameters (MUST match train.py exactly) ──
+    V_TOLERANCE     = 1.0
+    PQ_LIMIT        = 1.0
+    LAMBDA_LR       = 0.002
+    PEAK_WEIGHT     = 0.2
 
     NORM_OBS = True
     NORM_REWARD = True
@@ -85,22 +105,20 @@ if __name__ == '__main__':
     CLIP_REWARD = 50.0
 
     FORECAST_HORIZON_STEPS = 0
-    PFE_TERMINATE_PENALTY = 100.0
+    PFE_TERMINATE_PENALTY  = 20.0
 
     # ── Restore lambda from disk ──
-    lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+    lambda_init_value = np.array([5.0, 5.0, 5.0], dtype=np.float32)
     if USE_LAGRANGIAN and os.path.exists(LAMBDA_PATH):
         try:
-            lambda_init_value = np.load(LAMBDA_PATH).astype(np.float32)
-            if lambda_init_value.shape != (3,):
-                print(f"WARNING: Loaded lambda has wrong shape. Using defaults.")
-                lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+            loaded = np.load(LAMBDA_PATH).astype(np.float32)
+            if loaded.shape != (3,):
+                print(f"WARNING: Loaded lambda has wrong shape {loaded.shape}. Using defaults.")
             else:
-                lambda_init_value = np.clip(lambda_init_value, 0.0, 500.0)
+                lambda_init_value = np.clip(loaded, 0.0, 500.0)
                 print(f"Restored lambda from checkpoint: {lambda_init_value}")
         except Exception as e:
             print(f"WARNING: Could not load lambda: {e}. Using defaults.")
-            lambda_init_value = np.array([1.0, 1.0, 1.0], dtype=np.float32)
 
     # ── Load existing evaluation data ──
     eval_file = os.path.join(LOG_DIR, 'evaluations.npz')
@@ -132,13 +150,16 @@ if __name__ == '__main__':
             if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
                 env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
 
-            env = Monitor(env, LOG_DIR)
-
             if USE_LAGRANGIAN:
                 effective_lr = 0.0 if (N_ENVS > 1) else LAMBDA_LR
                 env = LagrangianWrapper(
-                    env, v_tolerance=V_TOLERANCE, pq_limit=PQ_LIMIT,
-                    lambda_lr=effective_lr, lambda_init=lambda_init_value,
+                    env,
+                    v_tolerance=V_TOLERANCE,
+                    pq_limit=PQ_LIMIT,
+                    lambda_lr=effective_lr,
+                    lambda_init=lambda_init_value,
+                    n_envs=N_ENVS,
+                    peak_weight=PEAK_WEIGHT,
                 )
             else:
                 env = StandardPenaltyWrapper(
@@ -148,6 +169,7 @@ if __name__ == '__main__':
                     w_q=STANDARD_PENALTY_W_Q,
                 )
             env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
+            env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + rank)
             return env
         return _init
@@ -160,10 +182,9 @@ if __name__ == '__main__':
                 env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
             env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
-            env = BatteryClipWrapper(env)
+            env = BatteryClipWrapper(env, clip_penalty_weight=0.0)
             if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
                 env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
-            # No penalty wrappers — eval reports raw economic reward
             env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
             env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + 1000 + rank)
@@ -196,9 +217,23 @@ if __name__ == '__main__':
         )
     print("Environments created successfully")
 
+    # ── Training steps (needed before LR override print) ──
+    train_steps = _DEFAULT_TRAIN_STEPS if args.steps is None else int(args.steps)
+
     # ── Load agent ──
     model = ALGO.load(AGENT_PATH, env=train_env, device=device)
     print("Model loaded successfully")
+
+    # ── Override learning rate for continuation ──
+    if args.agent == 'PPO':
+        CONTINUE_LR_INITIAL = 3e-4
+        CONTINUE_LR_FINAL   = 3e-5
+        model.learning_rate = _linear_schedule(CONTINUE_LR_INITIAL, CONTINUE_LR_FINAL)
+        print(f"LR schedule reset: {CONTINUE_LR_INITIAL} → {CONTINUE_LR_FINAL} over {train_steps} steps")
+    else:  # SAC
+        SAC_LR = 3e-4
+        model.learning_rate = SAC_LR
+        print(f"LR set to constant: {SAC_LR}")
 
     # ── Callbacks ──
     eval_callback = EvalCallback(eval_env, best_model_save_path=LOG_DIR,
@@ -212,12 +247,10 @@ if __name__ == '__main__':
         eval_callback.evaluations_length = old_ep_lengths
         if old_discounted is not None:
             eval_callback.evaluation_discounted_results = old_discounted
-            if hasattr(eval_callback, '_is_discounted_set'):
-                eval_callback._is_discounted_set = True
 
     callbacks = [eval_callback]
     if USE_LAGRANGIAN and N_ENVS > 1:
-        callbacks.append(LambdaSyncCallback(train_env, dual_lr=LAMBDA_LR, verbose=1))
+        callbacks.append(LambdaSyncCallback(train_env, dual_lr=LAMBDA_LR, verbose=1, peak_weight=PEAK_WEIGHT))
     callbacks.append(BatteryExplorationCallback(verbose=1, battery_reward_scale=0.1))
 
     if not args.disable_step_log:
@@ -231,7 +264,6 @@ if __name__ == '__main__':
         print(f"Step log: {os.path.abspath(step_log_path)}")
 
     # ── Continue training ──
-    train_steps = TRAIN_STEPS if args.steps is None else int(args.steps)
     print(f"Continuing training for {train_steps} steps...")
 
     with ProgressBarManager(train_steps) as c:
@@ -259,6 +291,8 @@ if __name__ == '__main__':
 
             if lambdas:
                 avg_lambda = np.mean(np.stack(lambdas, axis=0), axis=0)
+                assert avg_lambda.shape == (3,)
+                assert np.all(avg_lambda >= 0) and np.all(avg_lambda <= 500)
                 if os.path.exists(LAMBDA_PATH):
                     np.save(LAMBDA_PATH.replace('.npy', '_backup.npy'), np.load(LAMBDA_PATH))
                 np.save(LAMBDA_PATH, avg_lambda)

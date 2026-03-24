@@ -11,8 +11,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import List, Dict, Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 from analyze_results.plt_setup import set_rc_params
@@ -88,7 +86,6 @@ def main():
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=FIGSIZE, sharex=False)
-    plt.subplots_adjust(hspace=0.4)
 
     safety_stats = []
 
@@ -118,26 +115,27 @@ def main():
         safety_stats.append((label, safe_frac))
 
     # Formatting axes
-    ax1.set_title("Economic Performance (Episode Reward Sum)")
-    ax1.set_ylabel("Reward")
+    ax1.set_title("Reward per Episode")
+    ax1.set_xlabel("Training Timesteps (millions)")
+    ax1.set_ylabel("Cumulative Reward")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
-    ax2.set_title("Safety Violations Magnitude (Lower is better)")
-    ax2.set_ylabel("Sum of Violations / Episode")
-    ax2.set_xlabel("Timesteps (Millions)")
+    ax2.set_title("Constraint Violations per Episode")
+    ax2.set_xlabel("Training Timesteps (millions)")
+    ax2.set_ylabel("Total Violation Magnitude")
     ax2.legend()
     ax2.grid(True, alpha=0.3)
-    # Set log scale if violations vary wildly
-    if any(s[1] > 0 for s in safety_stats):
-         ax2.set_yscale('symlog', linthresh=0.1)
+    # Use symlog if violation range spans more than 2 orders of magnitude
+    if safety_stats and any(s[1] < 100 for s in safety_stats):
+        ax2.set_yscale('symlog', linthresh=0.1)
 
     # 4. Violation Frequency Bar Chart
     if safety_stats:
         bar_labels, bar_values = zip(*safety_stats)
         bars = ax3.bar(bar_labels, bar_values, color=['#4C72B0', '#55A868', '#C44E52', '#8172B3'][:len(bar_labels)])
-        ax3.set_title("Reliability (% of Perfectly Safe Episodes)")
-        ax3.set_ylabel("% Safe Steps")
+        ax3.set_title("Safety Rate")
+        ax3.set_ylabel("Safe Episodes (%)")
         ax3.set_ylim(0, 110)
         
         # Add value labels on top of bars

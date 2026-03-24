@@ -188,7 +188,7 @@ class BCP_base(ANMEnv):
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
         W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
-        W_SOC_SHAPE     = 3.0   # quadratic penalty shaping for SoC deviations (both reserve shortfall and ceiling excess)
+        W_SOC_SHAPE     = 20.0  # quadratic penalty shaping for SoC deviations (both reserve shortfall and ceiling excess)
         W_Q_MAGNITUDE   = 0.5   # per MVArh of unnecessary reactive power
         W_BRANCH_SOFT   = 1.0   # per MVAh above 80% loading (soft congestion signal)
 

@@ -1,6 +1,7 @@
 """
 Callback for monitoring battery exploration during training.
 """
+from collections import deque
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 
@@ -32,10 +33,11 @@ class BatteryExplorationCallback(BaseCallback):
         super().__init__(verbose)
         self.battery_reward_scale = battery_reward_scale
 
-        self.raw_action_history: list = []    # policy output [-1, 1] for battery P
-        self.intended_mw_history: list = []   # raw action rescaled to MW (pre-clip intent)
-        self.battery_usage_history: list = [] # physical P injection (MW) after clipping
-        self.soc_history: list = []           # battery SoC (MWh)
+        _maxlen = 1000  # only last 1000 entries are needed for logging
+        self.raw_action_history: deque = deque(maxlen=_maxlen)
+        self.intended_mw_history: deque = deque(maxlen=_maxlen)
+        self.battery_usage_history: deque = deque(maxlen=_maxlen)
+        self.soc_history: deque = deque(maxlen=_maxlen)
 
         # Battery P limits in MW — read from the simulator on first step and
         # cached so we don't re-traverse the wrapper stack every step.
@@ -107,11 +109,10 @@ class BatteryExplorationCallback(BaseCallback):
 
         # 4. Periodic statistics
         if self.verbose > 0 and self.num_timesteps % 1000 == 0:
-            window = 100
 
             if self.battery_usage_history:
-                avg_physical = np.mean(np.abs(self.battery_usage_history[-window:]))
-                avg_soc      = np.mean(self.soc_history[-window:]) if self.soc_history else 0.0
+                avg_physical = np.mean(np.abs(list(self.battery_usage_history)))
+                avg_soc      = np.mean(list(self.soc_history)) if self.soc_history else 0.0
                 print(
                     f"[BatteryExploration] t={self.num_timesteps} | "
                     f"Avg |P| (physical): {avg_physical:.3f} MW | "
@@ -119,8 +120,8 @@ class BatteryExplorationCallback(BaseCallback):
                 )
 
             if self.intended_mw_history and self.battery_usage_history:
-                avg_intended = np.mean(np.abs(self.intended_mw_history[-window:]))
-                avg_physical = np.mean(np.abs(self.battery_usage_history[-window:]))
+                avg_intended = np.mean(np.abs(list(self.intended_mw_history)))
+                avg_physical = np.mean(np.abs(list(self.battery_usage_history)))
 
                 if avg_intended > 1e-3:
                     clip_ratio = 1.0 - avg_physical / avg_intended
