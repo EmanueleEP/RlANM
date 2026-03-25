@@ -74,6 +74,17 @@ class BCP_base(ANMEnv):
 
         self.date += self.timestep_length
 
+        # When PFE diverges, simulator state is garbage.
+        # Return safe values and let PFETerminationWrapper handle termination.
+        pfe_ok = bool(getattr(self.simulator, "pfe_converged", True))
+        info["pfe_converged"] = pfe_ok
+        if not pfe_ok:
+            info["constraint_costs"] = np.zeros(3, dtype=np.float32)
+            info["reward_base_anm"] = float(r)
+            r = -100.0
+            self.year_count = (self.date - self.date_init).days // 365
+            return obs, r, terminated, truncated, info
+
         full_state = self.simulator.state or {}
 
         device_data = self.simulator.devices
@@ -152,7 +163,6 @@ class BCP_base(ANMEnv):
         )
         info["constraint/p_violation_pu_max"] = p_violation_pu_max
         info["constraint/branch_overload_pu_max"] = branch_overload_pu_max
-        info["pfe_converged"] = bool(getattr(self.simulator, "pfe_converged", True))
 
         slack_p = float(dev_p_dict.get(0, 0.0))
 

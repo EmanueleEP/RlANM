@@ -32,11 +32,12 @@ else:
 #ENV_ID = 'gym_anm:ANM6Easy-v0'
 #ENV_ID = 'Ciao-v0'
 #ENV_ID = 'SimpleEnv-v0'
-ENV_ID = "BCP-v0"
+#ENV_ID = "BCP-v0"
+ENV_ID = "Custom_ANM6Easy-v0"
 
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
-TRAIN_STEPS = 150000
+TRAIN_STEPS = 1500000
 MAX_TRAINING_EP_LENGTH = 5000 
 EVAL_FREQ = 20000
 N_EVAL_EPISODES = 5  

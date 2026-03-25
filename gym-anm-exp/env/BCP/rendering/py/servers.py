@@ -204,6 +204,6 @@ def _is_port_in_use(host, port):
 
 def _select_random_free_port():
     """Let the OS select an unused port."""
-    soc = socket.socket()
-    soc.bind(("", 0))
-    return soc.getsockname()[1]
+    with socket.socket() as soc:
+        soc.bind(("", 0))
+        return soc.getsockname()[1]
