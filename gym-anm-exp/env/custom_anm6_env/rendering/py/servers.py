@@ -3,10 +3,14 @@ import os
 import sys
 import io
 import socket
+import multiprocessing
 from contextlib import redirect_stdout
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from multiprocessing import Process
 from websocket_server import WebsocketServer
+
+# Use 'fork' context to avoid forkserver re-importing all modules (Python 3.14 default).
+_mp_ctx = multiprocessing.get_context("fork")
+Process = _mp_ctx.Process
 
 from .constants import RENDERING_LOGS, ROOT_FOLDER
 

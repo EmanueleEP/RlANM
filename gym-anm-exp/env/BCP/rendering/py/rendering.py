@@ -79,10 +79,13 @@ def start(title, dev_type, p_max, q_max, s_rate, v_magn_min, v_magn_max, soc_max
     p = os.path.join(http_server.address, RENDERING_RELATIVE_PATH)
     timeout = time.time() + 10
     while True:
-        page = requests.get(p)
-        if page.status_code == 200:
-            break
-        elif time.time() > timeout:
+        try:
+            page = requests.get(p)
+            if page.status_code == 200:
+                break
+        except requests.exceptions.ConnectionError:
+            pass
+        if time.time() > timeout:
             raise ConnectionError("Connection to HTTP server timeout.")
         time.sleep(0.2)
     webbrowser.open(p)
