@@ -8,6 +8,9 @@ __pycache__/
 *$py.class
 launch.json
 
+# File cache
+*.pyc
+
 # C extensions
 *.so
 

@@ -182,7 +182,7 @@ class BCP_base(ANMEnv):
         # Battery state
         battery_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(3, 0.0))
 
-        # SoC management — boundary penalty (soft walls at 15% and 85%)
+        # SoC management — boundary penalty (soft walls at 15% and 95%)
         soc_max_mwh = float(self.simulator.devices[3].soc_max) * float(self.simulator.baseMVA)
         soc_fraction = battery_soc_mwh / max(soc_max_mwh, 1e-8)
         SOC_LOW = 0.15
@@ -204,9 +204,9 @@ class BCP_base(ANMEnv):
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
         W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
-        W_SOC_BOUNDARY  = 30.0  # quadratic penalty near SoC boundaries (below 15% or above 85%)
+        W_SOC_BOUNDARY  = 30.0  # quadratic penalty near soc boundaries ( < 15% or > 95%)
         W_Q_MAGNITUDE   = 0.5   # per MVArh of unnecessary reactive power
-        W_BRANCH_SOFT   = 1.0   # per MVAh above 80% loading (soft congestion signal)
+        W_BRANCH_SOFT   = 1.0   # (= S, apparent power) per MVAh above 80% (soft congestion signal)
 
         curtailment_mwh   = curtailment_mw   * delta_t_h
         slack_import_mwh  = slack_import_mw  * delta_t_h
@@ -236,10 +236,7 @@ class BCP_base(ANMEnv):
         info["objective/cost_branch_overload_mvah"]       = float(branch_overload_mvah)
         info["branch_loading_pu"]                         = branch_loading
 
-        # Override base ANMEnv reward with BCP-specific objective.
-        # The base reward -(e_loss + penalty) is discarded because e_loss is clipped
-        # to (1, 100) and gives almost no signal about curtailment, import, or SOC.
-        # Constraint penalties are added downstream by Lagrangian/StandardPenaltyWrapper.
+        # Change base anmenv reward with bcp-specific objective
         info["reward_base_anm"] = float(r)
         r = -(
             W_CURTAIL      * curtailment_mwh

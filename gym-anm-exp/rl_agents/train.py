@@ -163,7 +163,7 @@ def main():
 
     continuing_training = os.path.exists(agent_path)
 
-    lambda_init_value = np.array([3.0, 3.0, 3.0], dtype=np.float32) # reduced from 5 to 3 based on previous run
+    lambda_init_value = np.array([1.5, 1.5, 1.5], dtype=np.float32) 
     if USE_LAGRANGIAN and continuing_training and os.path.exists(lambda_path):
         try:
             loaded = np.load(lambda_path).astype(np.float32)

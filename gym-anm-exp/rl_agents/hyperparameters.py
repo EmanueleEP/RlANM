@@ -8,7 +8,7 @@ import env
 
 def is_colab():
     try:
-        from google.colab import drive  # noinspection PyUnresolvedReference
+        from google.colab import drive
         return True
     except ImportError:
         return False
@@ -16,7 +16,6 @@ def is_colab():
 # Set BASE_DIR based on environment
 if is_colab():
     BASE_DIR = '/content/drive/MyDrive/UNI/Tesi/gym-anm-results/'
-    # Opzionale: monta Google Drive automaticamente
     try:
         from google.colab import drive
         drive.mount('/content/drive')
@@ -32,8 +31,8 @@ else:
 #ENV_ID = 'gym_anm:ANM6Easy-v0'
 #ENV_ID = 'Ciao-v0'
 #ENV_ID = 'SimpleEnv-v0'
-#ENV_ID = "BCP-v0"
-ENV_ID = "Custom_ANM6Easy-v0"
+ENV_ID = "BCP-v0"
+#ENV_ID = "Custom_ANM6Easy-v0"
 
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
@@ -56,9 +55,9 @@ INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS = True
 # Fixed penalty weights for StandardPenaltyWrapper (used when USE_LAGRANGIAN=False).
 # These multiply info["constraint_costs"] = [V_violation, P_violation, Q_violation].
 # For a sensitivity analysis, run training with different weight combinations.
-STANDARD_PENALTY_W_V = 2.0   # voltage constraint weight
-STANDARD_PENALTY_W_P = 2.0   # active-power / branch-overload constraint weight
-STANDARD_PENALTY_W_Q = 2.0   # reactive-power constraint weight
+STANDARD_PENALTY_W_V = 1.0   # voltage constraint weight
+STANDARD_PENALTY_W_P = 1.0   # active-power / branch-overload constraint weight
+STANDARD_PENALTY_W_Q = 1.0   # reactive-power constraint weight
 
 LOG_DIR = BASE_DIR + ENV_ID + '/'
 os.makedirs(LOG_DIR, exist_ok=True)
