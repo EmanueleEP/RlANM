@@ -112,10 +112,6 @@ def start(title, dev_type, p_max, q_max, s_rate, v_magn_min, v_magn_max, soc_max
     return http_server, ws_server
 
 
-_persistent_ws = None
-_persistent_ws_address = None
-
-
 def update(ws_address, cur_time, year_count, p, q, s, soc, p_potential, bus_v_magn, costs, network_collapsed):
     """
     Update the visualization of the environment.
@@ -148,17 +144,7 @@ def update(ws_address, cur_time, year_count, p, q, s, soc, p_potential, bus_v_ma
         True if no load flow solution is found (possibly infeasible); False
         otherwise.
     """
-    global _persistent_ws, _persistent_ws_address
-
-    # Reuse a persistent websocket connection instead of creating one per frame.
-    if _persistent_ws is None or _persistent_ws_address != ws_address or not _persistent_ws.connected:
-        if _persistent_ws is not None:
-            try:
-                _persistent_ws.close()
-            except Exception:
-                pass
-        _persistent_ws = create_connection(ws_address)
-        _persistent_ws_address = ws_address
+    ws = create_connection(ws_address)
 
     time_array = [cur_time.month, cur_time.day, cur_time.hour, cur_time.minute]
     message = json.dumps(
@@ -178,13 +164,8 @@ def update(ws_address, cur_time, year_count, p, q, s, soc, p_potential, bus_v_ma
     )
 
     # Send the message.
-    try:
-        _persistent_ws.send(message)
-    except Exception:
-        # Reconnect if the connection was lost.
-        _persistent_ws = create_connection(ws_address)
-        _persistent_ws_address = ws_address
-        _persistent_ws.send(message)
+    ws.send(message)
+    ws.close()
 
     return
 
@@ -201,14 +182,6 @@ def close(http_server, ws_server):
         The WebSocket server used for message exchanges between the environment
         and the visualization.
     """
-    global _persistent_ws, _persistent_ws_address
-    if _persistent_ws is not None:
-        try:
-            _persistent_ws.close()
-        except Exception:
-            pass
-        _persistent_ws = None
-        _persistent_ws_address = None
     http_server.process.terminate()
     ws_server.process.terminate()
 

@@ -244,7 +244,7 @@ class BatteryClipWrapper(gym.Wrapper):
     def __init__(self, env, clip_penalty_weight: float = 10.0):
         super().__init__(env)
         self.battery_action_idx = 2
-        self._battery_device_id = 3
+        self._battery_device_id = self._find_storage_device_id(env)
         self._clip_penalty_weight = float(clip_penalty_weight)
         # Cached static params (populated on first step)
         self._static_cached = False
@@ -256,6 +256,18 @@ class BatteryClipWrapper(gym.Wrapper):
         # Cached normalizer reference
         self._normalizer = None
         self._normalizer_cached = False
+
+    @staticmethod
+    def _find_storage_device_id(env):
+        """Auto-detect the StorageUnit device ID from the simulator."""
+        base = env
+        while hasattr(base, "env"):
+            base = base.env
+        if hasattr(base, "simulator"):
+            for dev_id, dev in base.simulator.devices.items():
+                if type(dev).__name__ == "StorageUnit":
+                    return dev_id
+        return 6  # fallback
 
     def _find_normalizer(self):
         if self._normalizer_cached:
