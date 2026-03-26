@@ -137,8 +137,8 @@ def main():
     print(f"Log directory: {run_log_dir}")
 
     V_TOLERANCE     = 1.0
-    PQ_LIMIT        = 1.0    
-    LAMBDA_LR       = 0.002
+    PQ_LIMIT        = 0.5
+    LAMBDA_LR       = 0.01
     PEAK_WEIGHT = 0.2
 
     FORECAST_HORIZON_STEPS = 0
@@ -163,7 +163,7 @@ def main():
 
     continuing_training = os.path.exists(agent_path)
 
-    lambda_init_value = np.array([1.5, 1.5, 1.5], dtype=np.float32) 
+    lambda_init_value = np.array([2.0, 2.0, 2.0], dtype=np.float32)
     if USE_LAGRANGIAN and continuing_training and os.path.exists(lambda_path):
         try:
             loaded = np.load(lambda_path).astype(np.float32)
@@ -284,6 +284,7 @@ def main():
                 learning_rate=_linear_schedule(PPO_LR_INITIAL, PPO_LR_FINAL),
                 clip_range=_linear_schedule(PPO_CLIP_INITIAL, PPO_CLIP_FINAL),
                 target_kl=PPO_TARGET_KL,
+                ent_coef=0.01,
             )
         else:  # SAC
             SAC_LR = 3e-4

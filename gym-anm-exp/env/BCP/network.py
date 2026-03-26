@@ -77,7 +77,7 @@ for i, row in enumerate(_device_rows):
 network["branch"] = np.array(
     [
         [0, 1, 0.0036, 0.1834, 0.0, 32, 1, 1],
-        [1, 2, 0.03, 0.022, 0.0, 20, 1, 0],
+        [1, 2, 0.03, 0.022, 0.0, 10, 1, 0],
     ],
     dtype=np.float64,
 )

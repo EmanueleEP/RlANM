@@ -182,11 +182,11 @@ class BCP_base(ANMEnv):
         # Battery state
         battery_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(3, 0.0))
 
-        # SoC management — boundary penalty (soft walls at 15% and 95%)
+        # SoC management — boundary penalty (soft walls at 20% and 80%)
         soc_max_mwh = float(self.simulator.devices[3].soc_max) * float(self.simulator.baseMVA)
         soc_fraction = battery_soc_mwh / max(soc_max_mwh, 1e-8)
-        SOC_LOW = 0.15
-        SOC_HIGH = 0.95
+        SOC_LOW = 0.2
+        SOC_HIGH = 0.8
         if soc_fraction < SOC_LOW:
             soc_boundary_cost = ((SOC_LOW - soc_fraction) / SOC_LOW) ** 2 * delta_t_h
         elif soc_fraction > SOC_HIGH:

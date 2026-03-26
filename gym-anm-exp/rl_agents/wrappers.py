@@ -116,7 +116,7 @@ class LagrangianWrapper(gym.Wrapper):
         lambda_init=1.0,
         lambda_lr: float = 1e-2,
         normalize_by_episode_length: bool = True,
-        lambda_max: float = 50.0,
+        lambda_max: float = 100.0,
         n_envs: int = 1,
         peak_weight: float = 0.2,
     ):
