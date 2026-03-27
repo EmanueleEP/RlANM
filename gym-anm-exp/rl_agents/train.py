@@ -140,7 +140,7 @@ def main():
     # Standard run: ~0.004 pu/step.  A limit of 0.01 allows modest Q
     # but penalises the 0.078 pu/step seen in the old Lagrangian run.
     Q_LIMIT         = 0.01
-    LAMBDA_LR       = 0.0001
+    LAMBDA_LR       = 0.01
     PEAK_WEIGHT = 0.2
 
     FORECAST_HORIZON_STEPS = 0
@@ -166,7 +166,7 @@ def main():
 
     continuing_training = os.path.exists(agent_path)
 
-    lambda_init_value = np.array([0.5, 0.5, 0.5], dtype=np.float32)
+    lambda_init_value = np.array([2.0, 2.0, 2.0], dtype=np.float32)
     if USE_LAGRANGIAN and continuing_training and os.path.exists(lambda_path):
         try:
             loaded = np.load(lambda_path).astype(np.float32)
