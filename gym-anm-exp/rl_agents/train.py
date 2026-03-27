@@ -129,7 +129,11 @@ def main():
 
     train_steps: int = int(args.steps) if args.steps is not None else _DEFAULT_TRAIN_STEPS
     if args.steps is not None:
-        print(f"TRAIN_STEPS sovrascritto da CLI: {train_steps}")
+        print(f"TRAIN_STEPS CLI: {train_steps}")
+
+    use_lagrangian: bool = args.lagrangian if args.lagrangian is not None else USE_LAGRANGIAN
+    if args.lagrangian is not None:
+        print(f"USE_LAGRANGIAN CLI: {use_lagrangian}")
 
     run_log_dir, tensorboard_log = make_log_dirs(_BASE_LOG_DIR)
     print(f"Log directory: {run_log_dir}")
@@ -167,7 +171,7 @@ def main():
     continuing_training = os.path.exists(agent_path)
 
     lambda_init_value = np.array([2.0, 2.0, 2.0], dtype=np.float32)
-    if USE_LAGRANGIAN and continuing_training and os.path.exists(lambda_path):
+    if use_lagrangian and continuing_training and os.path.exists(lambda_path):
         try:
             loaded = np.load(lambda_path).astype(np.float32)
             if loaded.shape == (3,):
@@ -187,7 +191,7 @@ def main():
             "TENSORBOARD_LOG": tensorboard_log, "TB_LOG_NAME": TB_LOG_NAME,
             "POLICY": POLICY, "ALGO": ALGO.__name__,
             "GAMMA": GAMMA, "MAX_EVAL_EP_LENGTH": MAX_EVAL_EP_LENGTH,
-            "USE_LAGRANGIAN": USE_LAGRANGIAN,
+            "USE_LAGRANGIAN": use_lagrangian,
             "PEAK_WEIGHT": PEAK_WEIGHT,
             "LAMBDA_LR": LAMBDA_LR,
             "Q_LIMIT": Q_LIMIT,
@@ -201,7 +205,7 @@ def main():
     train_factory = _make_train_env_factory(
         env_id=ENV_ID, run_log_dir=run_log_dir, seed=SEED,
         max_ep_length=MAX_TRAINING_EP_LENGTH,
-        use_lagrangian=USE_LAGRANGIAN,
+        use_lagrangian=use_lagrangian,
         lambda_init=lambda_init_value,
         lambda_lr=LAMBDA_LR,
         v_tolerance=V_TOLERANCE,
@@ -211,7 +215,7 @@ def main():
         include_branch_overload=INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
         forecast_horizon=FORECAST_HORIZON_STEPS,
         pfe_penalty=PFE_TERMINATE_PENALTY,
-        pfe_lambda_steps=PFE_LAMBDA_STEPS if USE_LAGRANGIAN else 0.0,
+        pfe_lambda_steps=PFE_LAMBDA_STEPS if use_lagrangian else 0.0,
         peak_weight=PEAK_WEIGHT,
     )
     eval_factory = _make_eval_env_factory(
@@ -260,7 +264,7 @@ def main():
             eval_callback.evaluation_discounted_results = list(old_data["discounted_results"])
 
     callbacks = [eval_callback]
-    if USE_LAGRANGIAN and N_ENVS > 1:
+    if use_lagrangian and N_ENVS > 1:
         callbacks.append(LambdaSyncCallback(train_env, dual_lr=LAMBDA_LR, verbose=1, peak_weight=PEAK_WEIGHT))
     callbacks.append(BatteryExplorationCallback(verbose=1, battery_reward_scale=0.1))
 
@@ -311,7 +315,7 @@ def main():
     print("Training completato.")
 
     # Save lambda
-    if USE_LAGRANGIAN:
+    if use_lagrangian:
         try:
             inner = train_env
             while hasattr(inner, "venv"):

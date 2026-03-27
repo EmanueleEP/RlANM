@@ -53,6 +53,13 @@ def parse_args():
         action="store_true",
         help="Disable step-level JSONL logging.",
     )
+    parser.add_argument(
+        "--lagrangian",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override USE_LAGRANGIAN from hyperparameters.py. "
+             "--lagrangian forces Lagrangian, --no-lagrangian forces standard.",
+    )
 
     args = parser.parse_args()
 
