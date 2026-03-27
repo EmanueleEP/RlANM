@@ -21,9 +21,6 @@ class BatteryExplorationCallback(BaseCallback):
         - Provides insights into charging/discharging patterns and clip frequency
     """
 
-    # Index of the battery P action in the action vector (device 3 = battery).
-    BATTERY_ACTION_IDX = 2
-
     def __init__(self, verbose: int = 0, battery_reward_scale: float = 0.1):
         """
         Args:
@@ -39,10 +36,11 @@ class BatteryExplorationCallback(BaseCallback):
         self.battery_usage_history: deque = deque(maxlen=_maxlen)
         self.soc_history: deque = deque(maxlen=_maxlen)
 
-        # Battery P limits in MW — read from the simulator on first step and
-        # cached so we don't re-traverse the wrapper stack every step.
+        # Cached values (populated on first step)
         self._p_min_mw: float = -50.0
         self._p_max_mw: float = 50.0
+        self._battery_device_id: int = 3   # fallback for BCP
+        self._battery_action_idx: int = 2  # fallback for BCP
         self._limits_cached: bool = False
 
     def _get_base_env(self):
@@ -56,16 +54,36 @@ class BatteryExplorationCallback(BaseCallback):
         return env
 
     def _cache_limits(self, base_env) -> None:
-        """Read battery P limits from the simulator once and cache them."""
+        """Read battery device id, action index, and P limits from the simulator once."""
         if self._limits_cached:
             return
         try:
+            from gym_anm.simulator.components import Generator, StorageUnit
             sim = base_env.simulator
-            dev = sim.devices.get(3, None)
-            if dev is not None and sim.baseMVA > 0:
-                self._p_min_mw = float(dev.p_min) * float(sim.baseMVA)
-                self._p_max_mw = float(dev.p_max) * float(sim.baseMVA)
-                self._limits_cached = True
+            if sim.baseMVA <= 0:
+                return
+
+            # Find StorageUnit device id dynamically
+            battery_dev_id = None
+            for dev_id, dev in sim.devices.items():
+                if isinstance(dev, StorageUnit):
+                    battery_dev_id = dev_id
+                    break
+            if battery_dev_id is None:
+                return
+
+            self._battery_device_id = battery_dev_id
+            self._p_min_mw = float(sim.devices[battery_dev_id].p_min) * float(sim.baseMVA)
+            self._p_max_mw = float(sim.devices[battery_dev_id].p_max) * float(sim.baseMVA)
+
+            # Compute action index: layout is [P_gen...][Q_gen...][P_des...][Q_des...]
+            n_gen = sum(
+                1 for dev in sim.devices.values()
+                if isinstance(dev, Generator) and not dev.is_slack
+            )
+            self._battery_action_idx = 2 * n_gen
+
+            self._limits_cached = True
         except Exception:
             pass  # keep fallback values, try again next step
 
@@ -89,8 +107,8 @@ class BatteryExplorationCallback(BaseCallback):
         # 2. Record raw policy intent and rescale to MW
         raw_battery_action = None
         actions = self.locals.get("actions", None)
-        if actions is not None and np.asarray(actions).shape[-1] > self.BATTERY_ACTION_IDX:
-            raw_battery_action = float(np.asarray(actions)[0][self.BATTERY_ACTION_IDX])
+        if actions is not None and np.asarray(actions).shape[-1] > self._battery_action_idx:
+            raw_battery_action = float(np.asarray(actions)[0][self._battery_action_idx])
             intended_mw = self._rescale_to_mw(raw_battery_action)
             self.raw_action_history.append(raw_battery_action)
             self.intended_mw_history.append(intended_mw)
@@ -101,8 +119,8 @@ class BatteryExplorationCallback(BaseCallback):
             dev_p   = full_state.get("dev_p",  {}).get("MW",  {})
             des_soc = full_state.get("des_soc", {}).get("MWh", {})
 
-            battery_p   = float(dev_p.get(3,   0.0))
-            battery_soc = float(des_soc.get(3, 0.0))
+            battery_p   = float(dev_p.get(self._battery_device_id,   0.0))
+            battery_soc = float(des_soc.get(self._battery_device_id, 0.0))
 
             self.battery_usage_history.append(battery_p)
             self.soc_history.append(battery_soc)
