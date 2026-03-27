@@ -140,9 +140,10 @@ def main():
 
     V_TOLERANCE     = 1.0
     PQ_LIMIT        = 0.5
-    # Q magnitude threshold (normalized by Q_TOL=0.01, same scale as V/P costs).
-    # Raw target: 0.01 pu (1 MVAr).  Divided by Q_TOL=0.01 → 1.0 in normalized space.
-    # This ensures the Q penalty can compete with the P benefit (also normalized).
+    # Q magnitude threshold in normalized space (q_pu / Q_TOL_MAGNITUDE).
+    # Physical target: 0.1 pu = 10 MVAr total.
+    # Normalized: 0.1 / Q_TOL_MAGNITUDE(0.1) = 1.0.
+    # This puts Q on the same scale as V/P costs (both ~0-15 range).
     Q_LIMIT         = 1.0
     LAMBDA_LR       = 0.01
     PEAK_WEIGHT = 0.2
