@@ -140,10 +140,10 @@ def main():
 
     V_TOLERANCE     = 1.0
     PQ_LIMIT        = 0.5
-    # Q magnitude threshold (in pu = MVAr / baseMVA).
-    # Standard run: ~0.004 pu/step.  A limit of 0.01 allows modest Q
-    # but penalises the 0.078 pu/step seen in the old Lagrangian run.
-    Q_LIMIT         = 0.01
+    # Q magnitude threshold (normalized by Q_TOL=0.01, same scale as V/P costs).
+    # Raw target: 0.01 pu (1 MVAr).  Divided by Q_TOL=0.01 → 1.0 in normalized space.
+    # This ensures the Q penalty can compete with the P benefit (also normalized).
+    Q_LIMIT         = 1.0
     LAMBDA_LR       = 0.01
     PEAK_WEIGHT = 0.2
 

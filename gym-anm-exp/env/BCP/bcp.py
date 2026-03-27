@@ -171,12 +171,12 @@ class BCP_base(ANMEnv):
         )
 
         # When Lagrangian is active, override the Q slot with total Q magnitude
-        # (in pu, NOT re-normalized by Q_TOL) so the dual variable controls
-        # reactive power.  The Lagrangian cost_limit (Q_LIMIT) acts as the
-        # acceptable threshold directly.
+        # normalized by Q_TOL (same scale as V and P costs) so that the dual
+        # variable can effectively compete with the P benefit of using Q.
         if getattr(self, "use_lagrangian_reward", False):
+            from .fix_reward import Q_TOL
             q_magnitude_pu = float(total_q_mvar / base_mva) if base_mva else 0.0
-            info["constraint_costs"][2] = q_magnitude_pu
+            info["constraint_costs"][2] = q_magnitude_pu / Q_TOL
         info["constraint/p_violation_pu_max"] = p_violation_pu_max
         info["constraint/branch_overload_pu_max"] = branch_overload_pu_max
 
