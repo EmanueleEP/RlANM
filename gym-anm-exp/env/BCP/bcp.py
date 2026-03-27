@@ -156,11 +156,27 @@ class BCP_base(ANMEnv):
 
         q_violation_pu_max = float(np.max(q_violation) / base_mva) if len(q_violation) > 0 else 0.0
 
+        # Total controllable reactive power magnitude (needed for Lagrangian Q constraint)
+        controllable_q_ids = [
+            i for i in device_ids
+            if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")
+        ]
+        total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
+        q_magnitude_mvarh = total_q_mvar * delta_t_h
+
         info["constraint_costs"] = build_constraint_costs(
             v_violation_pu_max=float(np.max(v_violation)) if len(v_violation) > 0 else 0.0,
             combined_p_constraint_pu=combined_p_constraint,
             q_violation_pu_max=q_violation_pu_max,
         )
+
+        # When Lagrangian is active, override the Q slot with total Q magnitude
+        # (in pu, NOT re-normalized by Q_TOL) so the dual variable controls
+        # reactive power.  The Lagrangian cost_limit (Q_LIMIT) acts as the
+        # acceptable threshold directly.
+        if getattr(self, "use_lagrangian_reward", False):
+            q_magnitude_pu = float(total_q_mvar / base_mva) if base_mva else 0.0
+            info["constraint_costs"][2] = q_magnitude_pu
         info["constraint/p_violation_pu_max"] = p_violation_pu_max
         info["constraint/branch_overload_pu_max"] = branch_overload_pu_max
 
@@ -193,13 +209,6 @@ class BCP_base(ANMEnv):
             soc_boundary_cost = ((soc_fraction - SOC_HIGH) / (1.0 - SOC_HIGH)) ** 2 * delta_t_h
         else:
             soc_boundary_cost = 0.0
-
-        controllable_q_ids = [
-            i for i in device_ids
-            if type(device_data[i]).__name__ in ("RenewableGen", "StorageUnit")
-        ]
-        total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
-        q_magnitude_mvarh = total_q_mvar * delta_t_h
 
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
@@ -236,16 +245,23 @@ class BCP_base(ANMEnv):
         info["objective/cost_branch_overload_mvah"]       = float(branch_overload_mvah)
         info["branch_loading_pu"]                         = branch_loading
 
-        # Change base anmenv reward with bcp-specific objective
+        # Original ANM6Easy reward from super().step():
+        #   r = -(e_loss + penalty)
+        #   e_loss = sum(dev.p) + curtailment, in pu, * delta_t, clipped to costs_clipping[0]
+        #   penalty = (V violations + branch overloads) * delta_t * lamb, clipped to costs_clipping[1]
         info["reward_base_anm"] = float(r)
-        r = -(
-            W_CURTAIL      * curtailment_mwh
-            + W_SLACK_IMPORT * slack_import_mwh
-            + W_SLACK_EXPORT * slack_export_mwh
-            + W_SOC_BOUNDARY * soc_boundary_cost
-            + W_Q_MAGNITUDE  * q_magnitude_mvarh
-            + W_BRANCH_SOFT  * branch_soft_penalty_mvah
-        )
+
+        if getattr(self, "use_lagrangian_reward", False):
+            # Lagrangian mode: energy-only objective, constraints via dual variables.
+            # Do NOT include V/branch/Q penalties here — the LagrangianWrapper handles them.
+            energy_cost = (
+                W_CURTAIL      * curtailment_mwh
+                + W_SLACK_IMPORT * slack_import_mwh
+                + W_SLACK_EXPORT * slack_export_mwh
+                + W_SOC_BOUNDARY * soc_boundary_cost
+            )
+            r = -energy_cost
+        # else: keep r from super().step() — identical to original ANM6Easy reward
 
         self.year_count = (self.date - self.date_init).days // 365
 

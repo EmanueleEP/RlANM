@@ -249,6 +249,10 @@ class ANM6_Custom(ANMEnv):
         total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
         q_magnitude_mvarh = total_q_mvar * delta_t_h
 
+        if getattr(self, "use_lagrangian_reward", False):
+            q_magnitude_pu = float(total_q_mvar / base_mva) if base_mva else 0.0
+            info["constraint_costs"][2] = q_magnitude_pu
+
         W_CURTAIL       = 1.0   # per MWh curtailed
         W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
         W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
@@ -285,14 +289,24 @@ class ANM6_Custom(ANMEnv):
 
         # Override base ANMEnv reward with custom objective.
         info["reward_base_anm"] = float(r)
-        r = -(
-            W_CURTAIL      * curtailment_mwh
-            + W_SLACK_IMPORT * slack_import_mwh
-            + W_SLACK_EXPORT * slack_export_mwh
-            + W_SOC_BOUNDARY * soc_boundary_cost
-            + W_Q_MAGNITUDE  * q_magnitude_mvarh
-            + W_BRANCH_SOFT  * branch_soft_penalty_mvah
-        )
+        if getattr(self, "use_lagrangian_reward", False):
+            # Lagrangian mode: energy-only objective, constraints via dual variables.
+            # Do NOT include Q/branch penalties here — the LagrangianWrapper handles them.
+            r = -(
+                W_CURTAIL      * curtailment_mwh
+                + W_SLACK_IMPORT * slack_import_mwh
+                + W_SLACK_EXPORT * slack_export_mwh
+                + W_SOC_BOUNDARY * soc_boundary_cost
+            )
+        else:
+            r = -(
+                W_CURTAIL      * curtailment_mwh
+                + W_SLACK_IMPORT * slack_import_mwh
+                + W_SLACK_EXPORT * slack_export_mwh
+                + W_SOC_BOUNDARY * soc_boundary_cost
+                + W_Q_MAGNITUDE  * q_magnitude_mvarh
+                + W_BRANCH_SOFT  * branch_soft_penalty_mvah
+            )
 
         self.year_count = (self.date - self.date_init).days // 365
 

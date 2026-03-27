@@ -111,8 +111,9 @@ class LagrangianWrapper(gym.Wrapper):
     def __init__(
         self,
         env: gym.Env,
-        v_tolerance: float = 1.0,     
-        pq_limit: float = 1.0,         
+        v_tolerance: float = 1.0,
+        pq_limit: float = 1.0,
+        q_limit: float = None,
         lambda_init=1.0,
         lambda_lr: float = 1e-2,
         normalize_by_episode_length: bool = True,
@@ -128,7 +129,8 @@ class LagrangianWrapper(gym.Wrapper):
         self.normalize = normalize_by_episode_length
         self.lambda_max = lambda_max
         self.n_constraints = 3
-        self.cost_limit = np.array([v_tolerance, pq_limit, pq_limit], dtype=np.float32)
+        q_lim = q_limit if q_limit is not None else pq_limit
+        self.cost_limit = np.array([v_tolerance, pq_limit, q_lim], dtype=np.float32)
         self.peak_weight = float(np.clip(peak_weight, 0.0, 1.0))
 
         # FIX: assert di coerenza tra lambda_lr e n_envs

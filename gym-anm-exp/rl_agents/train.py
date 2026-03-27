@@ -24,7 +24,6 @@ from .callbacks import ProgressBarManager, EvalCallback
 from .utils import save_hyperparameters, parse_args, make_log_dirs
 from .wrappers import (
     LagrangianWrapper,
-    StandardPenaltyWrapper,
     TimeLimitWrapper,
     NormalizeActionWrapper,
     BatteryClipWrapper,
@@ -49,9 +48,8 @@ def _linear_schedule(initial_value: float, final_value: float = 0.0):
 
 def _make_train_env_factory(
     env_id, run_log_dir, seed, max_ep_length,
-    use_lagrangian, lambda_init, lambda_lr, v_tolerance, pq_limit,
-    n_envs, include_branch_overload, forecast_horizon, pfe_penalty,
-    standard_penalty_w_v, standard_penalty_w_p, standard_penalty_w_q, peak_weight,
+    use_lagrangian, lambda_init, lambda_lr, v_tolerance, pq_limit, q_limit,
+    n_envs, include_branch_overload, forecast_horizon, pfe_penalty, peak_weight,
 ):
     """
     Restituisce una factory per gli environment di training.
@@ -63,6 +61,9 @@ def _make_train_env_factory(
             env = gym.make(env_id)
             if hasattr(env, "include_branch_overload_in_constraints"):
                 env.include_branch_overload_in_constraints = bool(include_branch_overload)
+            # When Lagrangian is active, remove Q/branch costs from base reward
+            # to avoid double-penalization (Lagrangian handles them via dual variables)
+            env.unwrapped.use_lagrangian_reward = bool(use_lagrangian)
             env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)
@@ -75,18 +76,15 @@ def _make_train_env_factory(
                     env,
                     v_tolerance=v_tolerance,
                     pq_limit=pq_limit,
+                    q_limit=q_limit,
                     lambda_lr=effective_lr,
                     lambda_init=lambda_init,
                     n_envs=n_envs,
                     peak_weight=peak_weight,
                 )
-            else:
-                env = StandardPenaltyWrapper(
-                    env,
-                    w_v=standard_penalty_w_v,
-                    w_p=standard_penalty_w_p,
-                    w_q=standard_penalty_w_q,
-                )
+            # Standard path: no extra penalty wrapper needed.
+            # The original ANM6Easy reward from super().step() already
+            # includes -(e_loss + penalty*lamb) with lamb=100.
             env = PFETerminateWrapper(env, penalty=pfe_penalty)
             env = Monitor(env, run_log_dir)
             env.reset(seed=seed + rank)
@@ -138,6 +136,10 @@ def main():
 
     V_TOLERANCE     = 1.0
     PQ_LIMIT        = 0.5
+    # Q magnitude threshold (in pu = MVAr / baseMVA).
+    # Standard run: ~0.004 pu/step.  A limit of 0.01 allows modest Q
+    # but penalises the 0.078 pu/step seen in the old Lagrangian run.
+    Q_LIMIT         = 0.01
     LAMBDA_LR       = 0.01
     PEAK_WEIGHT = 0.2
 
@@ -187,6 +189,7 @@ def main():
             "USE_LAGRANGIAN": USE_LAGRANGIAN,
             "PEAK_WEIGHT": PEAK_WEIGHT,
             "LAMBDA_LR": LAMBDA_LR,
+            "Q_LIMIT": Q_LIMIT,
             "STANDARD_PENALTY_W_V": STANDARD_PENALTY_W_V,
             "STANDARD_PENALTY_W_P": STANDARD_PENALTY_W_P,
             "STANDARD_PENALTY_W_Q": STANDARD_PENALTY_W_Q,
@@ -202,13 +205,11 @@ def main():
         lambda_lr=LAMBDA_LR,
         v_tolerance=V_TOLERANCE,
         pq_limit=PQ_LIMIT,
+        q_limit=Q_LIMIT,
         n_envs=N_ENVS,
         include_branch_overload=INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
         forecast_horizon=FORECAST_HORIZON_STEPS,
         pfe_penalty=PFE_TERMINATE_PENALTY,
-        standard_penalty_w_v=STANDARD_PENALTY_W_V,
-        standard_penalty_w_p=STANDARD_PENALTY_W_P,
-        standard_penalty_w_q=STANDARD_PENALTY_W_Q,
         peak_weight=PEAK_WEIGHT,
     )
     eval_factory = _make_eval_env_factory(
