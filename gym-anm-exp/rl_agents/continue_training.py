@@ -95,8 +95,9 @@ if __name__ == '__main__':
 
     # ── Parameters (MUST match train.py exactly) ──
     V_TOLERANCE     = 1.0
-    PQ_LIMIT        = 1.0
-    LAMBDA_LR       = 0.002
+    PQ_LIMIT        = 0.5
+    Q_LIMIT         = 0.01
+    LAMBDA_LR       = 0.0001
     PEAK_WEIGHT     = 0.2
 
     NORM_OBS = True
@@ -105,10 +106,11 @@ if __name__ == '__main__':
     CLIP_REWARD = 50.0
 
     FORECAST_HORIZON_STEPS = 0
-    PFE_TERMINATE_PENALTY  = 20.0
+    PFE_TERMINATE_PENALTY  = 50.0
+    PFE_LAMBDA_STEPS       = 1000.0
 
     # ── Restore lambda from disk ──
-    lambda_init_value = np.array([5.0, 5.0, 5.0], dtype=np.float32)
+    lambda_init_value = np.array([0.5, 0.5, 0.5], dtype=np.float32)
     if USE_LAGRANGIAN and os.path.exists(LAMBDA_PATH):
         try:
             loaded = np.load(LAMBDA_PATH).astype(np.float32)
@@ -143,6 +145,7 @@ if __name__ == '__main__':
             env = gym.make(ENV_ID)
             if hasattr(env, "include_branch_overload_in_constraints"):
                 env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
+            env.unwrapped.use_lagrangian_reward = bool(USE_LAGRANGIAN)
             env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)
@@ -156,6 +159,7 @@ if __name__ == '__main__':
                     env,
                     v_tolerance=V_TOLERANCE,
                     pq_limit=PQ_LIMIT,
+                    q_limit=Q_LIMIT,
                     lambda_lr=effective_lr,
                     lambda_init=lambda_init_value,
                     n_envs=N_ENVS,
@@ -168,7 +172,11 @@ if __name__ == '__main__':
                     w_p=STANDARD_PENALTY_W_P,
                     w_q=STANDARD_PENALTY_W_Q,
                 )
-            env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
+            env = PFETerminateWrapper(
+                env,
+                penalty=PFE_TERMINATE_PENALTY,
+                lambda_steps=PFE_LAMBDA_STEPS if USE_LAGRANGIAN else 0.0,
+            )
             env = Monitor(env, LOG_DIR)
             env.reset(seed=SEED + rank)
             return env
