@@ -245,8 +245,8 @@ class BatteryClipWrapper(gym.Wrapper):
 
     def __init__(self, env, clip_penalty_weight: float = 10.0):
         super().__init__(env)
-        self.battery_action_idx = 2
         self._battery_device_id = self._find_storage_device_id(env)
+        self.battery_action_idx = self._find_battery_action_idx(env)
         self._clip_penalty_weight = float(clip_penalty_weight)
         # Cached static params (populated on first step)
         self._static_cached = False
@@ -270,6 +270,25 @@ class BatteryClipWrapper(gym.Wrapper):
                 if type(dev).__name__ == "StorageUnit":
                     return dev_id
         return 6  # fallback
+
+    @staticmethod
+    def _find_battery_action_idx(env):
+        """Compute the action index for the first StorageUnit P setpoint.
+
+        gym-anm action layout: [P_gen...] [Q_gen...] [P_des...] [Q_des...]
+        Battery P starts at index 2 * N_non_slack_gen.
+        """
+        base = env
+        while hasattr(base, "env"):
+            base = base.env
+        if hasattr(base, "simulator"):
+            from gym_anm.simulator.components import Generator, StorageUnit
+            n_gen = sum(
+                1 for dev in base.simulator.devices.values()
+                if isinstance(dev, Generator) and not dev.is_slack
+            )
+            return 2 * n_gen  # P_des starts after [P_gen * n_gen] + [Q_gen * n_gen]
+        return 2  # fallback for BCP (1 generator)
 
     def _find_normalizer(self):
         if self._normalizer_cached:
