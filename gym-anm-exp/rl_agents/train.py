@@ -49,7 +49,7 @@ def _linear_schedule(initial_value: float, final_value: float = 0.0):
 def _make_train_env_factory(
     env_id, run_log_dir, seed, max_ep_length,
     use_lagrangian, lambda_init, lambda_lr, v_tolerance, pq_limit, q_limit,
-    n_envs, include_branch_overload, forecast_horizon, pfe_penalty, peak_weight,
+    n_envs, include_branch_overload, forecast_horizon, pfe_penalty, pfe_lambda_steps, peak_weight,
 ):
     """
     Restituisce una factory per gli environment di training.
@@ -85,7 +85,7 @@ def _make_train_env_factory(
             # Standard path: no extra penalty wrapper needed.
             # The original ANM6Easy reward from super().step() already
             # includes -(e_loss + penalty*lamb) with lamb=100.
-            env = PFETerminateWrapper(env, penalty=pfe_penalty)
+            env = PFETerminateWrapper(env, penalty=pfe_penalty, lambda_steps=pfe_lambda_steps)
             env = Monitor(env, run_log_dir)
             env.reset(seed=seed + rank)
             return env
@@ -144,7 +144,8 @@ def main():
     PEAK_WEIGHT = 0.2
 
     FORECAST_HORIZON_STEPS = 0
-    PFE_TERMINATE_PENALTY  = 1000.0
+    PFE_TERMINATE_PENALTY  = 50.0   # base penalty (always applied)
+    PFE_LAMBDA_STEPS       = 200.0  # dynamic scaling: penalty += sum(lambda*limit) * this
 
     PPO_LR_INITIAL  = 3e-4
     PPO_LR_FINAL    = 3e-5
@@ -210,6 +211,7 @@ def main():
         include_branch_overload=INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
         forecast_horizon=FORECAST_HORIZON_STEPS,
         pfe_penalty=PFE_TERMINATE_PENALTY,
+        pfe_lambda_steps=PFE_LAMBDA_STEPS if USE_LAGRANGIAN else 0.0,
         peak_weight=PEAK_WEIGHT,
     )
     eval_factory = _make_eval_env_factory(

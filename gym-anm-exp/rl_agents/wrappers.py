@@ -92,17 +92,52 @@ class TimeLimitWrapper(gym.Wrapper):
 
 
 class PFETerminateWrapper(gym.Wrapper):
-    def __init__(self, env: gym.Env, penalty: float = 100.0):
+    """Terminates episode on PFE divergence and applies a penalty.
+
+    When a LagrangianWrapper is present in the inner wrapper stack, the penalty
+    scales dynamically with lambda so that crashing PFE is never cheaper than
+    surviving the episode:
+
+        penalty = base_penalty + sum(lambda * cost_limit) * lambda_steps
+
+    With lambda_steps ~ max_episode_length / 2, this approximates the expected
+    remaining Lagrangian cost of the episode, making early termination
+    unprofitable at any lambda value.
+
+    When no LagrangianWrapper is found, falls back to the fixed base_penalty.
+    """
+
+    def __init__(self, env: gym.Env, penalty: float = 100.0, lambda_steps: float = 0.0):
         super().__init__(env)
         self.penalty = float(penalty)
+        self.lambda_steps = float(lambda_steps)
+        self._lagrangian: "LagrangianWrapper | None" = None
+        self._lagrangian_searched = False
+
+    def _find_lagrangian(self):
+        if self._lagrangian_searched:
+            return self._lagrangian
+        env = self.env
+        while env is not None:
+            if isinstance(env, LagrangianWrapper):
+                self._lagrangian = env
+                break
+            env = getattr(env, "env", None)
+        self._lagrangian_searched = True
+        return self._lagrangian
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
         if info.get("pfe_converged", True) is False:
-            reward = float(reward) - self.penalty
+            total_penalty = self.penalty
+            if self.lambda_steps > 0:
+                lag = self._find_lagrangian()
+                if lag is not None:
+                    total_penalty += float(np.dot(lag.lam, lag.cost_limit)) * self.lambda_steps
+            reward = float(reward) - total_penalty
             terminated = True
             info["pfe_terminated"] = True
-            info["pfe_penalty"] = float(self.penalty)
+            info["pfe_penalty"] = total_penalty
         return obs, reward, terminated, truncated, info
 
 
