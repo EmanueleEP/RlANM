@@ -145,7 +145,7 @@ def main():
     # Normalized: 0.1 / Q_TOL_MAGNITUDE(0.1) = 1.0.
     # This puts Q on the same scale as V/P costs (both ~0-15 range).
     Q_LIMIT         = 1.0
-    LAMBDA_LR       = 0.01
+    LAMBDA_LR       = 0.0001
     PEAK_WEIGHT = 0.2
 
     FORECAST_HORIZON_STEPS = 0

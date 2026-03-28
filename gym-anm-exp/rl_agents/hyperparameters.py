@@ -37,10 +37,10 @@ ENV_ID = "Custom_ANM6Easy-v0"
 GAMMA = 0.995
 POLICY = 'MlpPolicy'
 TRAIN_STEPS = 1500000
-MAX_TRAINING_EP_LENGTH = 5000 
+MAX_TRAINING_EP_LENGTH = 288   # 3 days × 96 steps/day = one full deterministic cycle
 EVAL_FREQ = 20000
-N_EVAL_EPISODES = 5  
-MAX_EVAL_EP_LENGTH = 3000  
+N_EVAL_EPISODES = 5
+MAX_EVAL_EP_LENGTH = 672   # 7 days for eval
 
 # new parameter
 N_ENVS = 1 

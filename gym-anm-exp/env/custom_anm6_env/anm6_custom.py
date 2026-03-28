@@ -126,7 +126,7 @@ class ANM6_Custom(ANMEnv):
         if not pfe_ok:
             info["constraint_costs"] = np.zeros(3, dtype=np.float32)
             info["reward_base_anm"] = float(r)
-            r = -100.0
+            r = -self.costs_clipping[1] / (1.0 - self.gamma)
             self.year_count = (self.date - self.date_init).days // 365
             return obs, r, terminated, truncated, info
 
