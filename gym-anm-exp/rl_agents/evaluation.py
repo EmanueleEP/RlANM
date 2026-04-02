@@ -81,6 +81,7 @@ def evaluate_policy(
     episode_rewards, episode_lengths, episode_discounted_rewards = [], [], []
     constraint_any_steps, constraint_v_steps, constraint_p_steps, constraint_q_steps = [], [], [], []
     branch_overload_steps, pfe_nonconverged_steps = [], []
+    branch_overload_mva_episodes, branch_loading_pct_episodes = [], []
     for i in range(n_eval_episodes):
         # Avoid double reset, as VecEnv are reset automatically
         if not isinstance(env, VecEnv) or i == 0:
@@ -92,6 +93,8 @@ def evaluate_policy(
         any_steps = v_steps = p_steps = q_steps = 0
         br_steps = 0
         pfe_steps = 0
+        branch_overload_mag_sum = 0.0
+        branch_loading_pct_sum = 0.0
         while not done:
             action, state = model.predict(obs, state=state, deterministic=deterministic)
             obs, rewards, dones, infos = env.step(action)
@@ -123,8 +126,15 @@ def evaluate_policy(
                                     any_steps += 1
 
                         br = info0.get("constraint/branch_overload_pu_max", None)
-                        if br is not None and float(br) > 0.0:
-                            br_steps += 1
+                        if br is not None:
+                            br_val = float(br)
+                            branch_overload_mag_sum += br_val
+                            if br_val > 0.0:
+                                br_steps += 1
+
+                        bl = info0.get("branch_loading_pu", None)
+                        if bl is not None and isinstance(bl, dict) and bl:
+                            branch_loading_pct_sum += max(bl.values()) * 100.0
 
                         pfe = info0.get("pfe_converged", None)
                         if pfe is False:
@@ -147,6 +157,8 @@ def evaluate_policy(
             constraint_q_steps.append(int(q_steps))
             branch_overload_steps.append(int(br_steps))
             pfe_nonconverged_steps.append(int(pfe_steps))
+            branch_overload_mva_episodes.append(branch_overload_mag_sum / max(episode_length, 1) * 100.0)
+            branch_loading_pct_episodes.append(branch_loading_pct_sum / max(episode_length, 1))
     mean_reward = np.mean(episode_rewards)
     mean_discounted_reward = np.mean(episode_discounted_rewards)
     std_reward = np.std(episode_rewards)
@@ -162,6 +174,8 @@ def evaluate_policy(
                 "q": constraint_q_steps,
                 "branch_overload": branch_overload_steps,
                 "pfe_nonconverged": pfe_nonconverged_steps,
+                "branch_overload_mva": branch_overload_mva_episodes,
+                "branch_loading_pct": branch_loading_pct_episodes,
             }
             return episode_rewards, episode_lengths, episode_discounted_rewards, stats
         return episode_rewards, episode_lengths, episode_discounted_rewards

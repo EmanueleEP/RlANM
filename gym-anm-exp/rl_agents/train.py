@@ -24,6 +24,7 @@ from .callbacks import ProgressBarManager, EvalCallback
 from .utils import save_hyperparameters, parse_args, make_log_dirs
 from .wrappers import (
     LagrangianWrapper,
+    StandardPenaltyWrapper,
     TimeLimitWrapper,
     NormalizeActionWrapper,
     BatteryClipWrapper,
@@ -48,7 +49,8 @@ def _linear_schedule(initial_value: float, final_value: float = 0.0):
 
 def _make_train_env_factory(
     env_id, run_log_dir, seed, max_ep_length,
-    use_lagrangian, lambda_init, lambda_lr, v_tolerance, pq_limit, q_limit,
+    use_lagrangian, use_bcp_reward, lambda_init, lambda_lr, v_tolerance, pq_limit, q_limit,
+    w_v, w_p, w_q,
     n_envs, include_branch_overload, forecast_horizon, pfe_penalty, pfe_lambda_steps, peak_weight,
 ):
     """
@@ -61,9 +63,9 @@ def _make_train_env_factory(
             env = gym.make(env_id)
             if hasattr(env, "include_branch_overload_in_constraints"):
                 env.include_branch_overload_in_constraints = bool(include_branch_overload)
-            # When Lagrangian is active, remove Q/branch costs from base reward
-            # to avoid double-penalization (Lagrangian handles them via dual variables)
-            env.unwrapped.use_lagrangian_reward = bool(use_lagrangian)
+            # BCP energy-only base reward: used by both Lagrangian and BCP-standard paths.
+            # ANM6Easy path leaves use_lagrangian_reward=False (original e_loss + lamb*penalty).
+            env.unwrapped.use_lagrangian_reward = bool(use_lagrangian or use_bcp_reward)
             env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)
@@ -82,9 +84,11 @@ def _make_train_env_factory(
                     n_envs=n_envs,
                     peak_weight=peak_weight,
                 )
-            # Standard path: no extra penalty wrapper needed.
-            # The original ANM6Easy reward from super().step() already
-            # includes -(e_loss + penalty*lamb) with lamb=100.
+            elif use_bcp_reward:
+                # BCP energy-only base + fixed penalty weights (no adaptive dual variables).
+                # Fair baseline for Lagrangian comparison: same reward philosophy, fixed lambdas.
+                env = StandardPenaltyWrapper(env, w_v=w_v, w_p=w_p, w_q=w_q)
+            # ANM6Easy path: no extra wrapper — original reward kept unchanged.
             env = PFETerminateWrapper(env, penalty=pfe_penalty, lambda_steps=pfe_lambda_steps)
             env = Monitor(env, run_log_dir)
             env.reset(seed=seed + rank)
@@ -135,6 +139,10 @@ def main():
     if args.lagrangian is not None:
         print(f"USE_LAGRANGIAN CLI: {use_lagrangian}")
 
+    use_bcp_reward: bool = args.bcp_reward and not use_lagrangian
+    if use_bcp_reward:
+        print("BCP-REWARD mode: energy-only base + fixed penalty weights (no adaptive lambdas)")
+
     run_log_dir, tensorboard_log = make_log_dirs(_BASE_LOG_DIR)
     print(f"Log directory: {run_log_dir}")
 
@@ -145,8 +153,16 @@ def main():
     # Normalized: 0.1 / Q_TOL_MAGNITUDE(0.1) = 1.0.
     # This puts Q on the same scale as V/P costs (both ~0-15 range).
     Q_LIMIT         = 1.0
-    LAMBDA_LR       = 0.0001
-    PEAK_WEIGHT = 0.2
+    LAMBDA_LR       = 0.01
+    PEAK_WEIGHT     = 0.2
+
+    # Fixed penalty weights for BCP-standard mode (--bcp-reward --no-lagrangian).
+    # In normalized constraint_costs space — same scale as Lagrangian lambda_init.
+    # V/P/Q costs typically 0-15 in this space; weights of 2-4 give penalties
+    # comparable to the energy base reward (0-25/step).
+    BCP_W_V = 3.0
+    BCP_W_P = 3.0
+    BCP_W_Q = 1.0
 
     FORECAST_HORIZON_STEPS = 0
     PFE_TERMINATE_PENALTY  = 50.0   # base penalty (always applied)
@@ -171,7 +187,7 @@ def main():
 
     continuing_training = os.path.exists(agent_path)
 
-    lambda_init_value = np.array([2.0, 2.0, 2.0], dtype=np.float32)
+    lambda_init_value = np.array([0.5, 3.5, 0.5], dtype=np.float32)
     if use_lagrangian and continuing_training and os.path.exists(lambda_path):
         try:
             loaded = np.load(lambda_path).astype(np.float32)
@@ -193,6 +209,7 @@ def main():
             "POLICY": POLICY, "ALGO": ALGO.__name__,
             "GAMMA": GAMMA, "MAX_EVAL_EP_LENGTH": MAX_EVAL_EP_LENGTH,
             "USE_LAGRANGIAN": use_lagrangian,
+            "USE_BCP_REWARD": use_bcp_reward,
             "PEAK_WEIGHT": PEAK_WEIGHT,
             "LAMBDA_LR": LAMBDA_LR,
             "Q_LIMIT": Q_LIMIT,
@@ -207,11 +224,13 @@ def main():
         env_id=ENV_ID, run_log_dir=run_log_dir, seed=SEED,
         max_ep_length=MAX_TRAINING_EP_LENGTH,
         use_lagrangian=use_lagrangian,
+        use_bcp_reward=use_bcp_reward,
         lambda_init=lambda_init_value,
         lambda_lr=LAMBDA_LR,
         v_tolerance=V_TOLERANCE,
         pq_limit=PQ_LIMIT,
         q_limit=Q_LIMIT,
+        w_v=BCP_W_V, w_p=BCP_W_P, w_q=BCP_W_Q,
         n_envs=N_ENVS,
         include_branch_overload=INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
         forecast_horizon=FORECAST_HORIZON_STEPS,

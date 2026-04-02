@@ -8,7 +8,7 @@ from .bcp import BCP_base
 profiles_path = "env/BCP/daysHoursPQ.txt"
 
 
-_LAMB = 100 
+_LAMB = 2 
 
 class BCP(BCP_base):
     """The :code:`BCP-v0` task."""
@@ -18,7 +18,7 @@ class BCP(BCP_base):
         K = 1
         delta_t = 0.25  # 15 minutes between timesteps
         gamma = 0.995
-        lamb = _LAMB # penalty weight 
+        lamb = _LAMB
         aux_bounds = np.array([[0, 24 / delta_t - 1]])
         costs_clipping = (1, 100)
         super().__init__(observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping)

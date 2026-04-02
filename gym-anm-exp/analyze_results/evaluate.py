@@ -1,0 +1,496 @@
+#!/usr/bin/env python3
+"""
+Evaluate a trained RL agent on the BCP environment.
+
+Usage:
+    python -m analyze_results.evaluate PPO --path results/BCP-v0/.../run_X --episodes 20
+    python -m analyze_results.evaluate PPO --path run1 run2 --labels "Lagrangian" "Standard" --episodes 20
+"""
+
+import argparse
+import os
+import json
+import warnings
+import numpy as np
+import torch
+import gymnasium as gym
+
+from stable_baselines3.ppo import PPO
+from stable_baselines3.sac import SAC
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+
+from rl_agents.hyperparameters import (
+    GAMMA,
+    INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
+    ENV_ID as DEFAULT_ENV_ID,
+    MAX_EVAL_EP_LENGTH as DEFAULT_MAX_EVAL_EP_LENGTH,
+)
+
+
+def read_run_hyperparameters(run_path):
+    """Read ENV_ID and MAX_EVAL_EP_LENGTH from a run's hyperparameters.txt."""
+    hp_path = os.path.join(run_path, "hyperparameters.txt")
+    params = {}
+    if not os.path.exists(hp_path):
+        return params
+    with open(hp_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if ":" not in line:
+                continue
+            parts = line.split(":", 1)
+            key = parts[0].strip().strip("'\"")
+            val = parts[1].strip().strip("'\"")
+            params[key] = val
+    return params
+from rl_agents.wrappers import (
+    TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper,
+    PFETerminateWrapper,
+)
+
+
+def make_eval_env(env_id, max_ep_length, include_branch_overload):
+    """Build eval env without Lagrangian/Standard wrapper (raw reward)."""
+    def _init():
+        env = gym.make(env_id)
+        if hasattr(env, "include_branch_overload_in_constraints"):
+            env.include_branch_overload_in_constraints = bool(include_branch_overload)
+        env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
+        env = NormalizeActionWrapper(env)
+        env = BatteryClipWrapper(env, clip_penalty_weight=0.0)
+        env = PFETerminateWrapper(env, penalty=20.0)
+        return env
+    return _init
+
+
+def load_lambda_state(run_path):
+    """Load saved Lagrangian lambda values from a run directory."""
+    lam_path = os.path.join(run_path, "lambda_state.npy")
+    if os.path.exists(lam_path):
+        lam = np.load(lam_path, allow_pickle=True)
+        return np.asarray(lam, dtype=np.float32)
+    return None
+
+
+def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42):
+    """Run n_episodes and collect detailed metrics."""
+
+    vec_env_path = os.path.join(run_path, "training_vec_env")
+    zip_path = os.path.join(run_path, "best_model.zip")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if not os.path.exists(zip_path):
+        raise FileNotFoundError(f"Model not found: {zip_path}")
+
+    # Read ENV_ID and MAX_EVAL_EP_LENGTH from run's hyperparameters
+    hp = read_run_hyperparameters(run_path)
+    env_id = hp.get("ENV_ID", DEFAULT_ENV_ID)
+    max_ep_length = int(hp.get("MAX_EVAL_EP_LENGTH", DEFAULT_MAX_EVAL_EP_LENGTH))
+    use_lagrangian = hp.get("USE_LAGRANGIAN", "False").lower() == "true"
+
+    # Load lambda for Lagrangian reward computation
+    lam = load_lambda_state(run_path)
+    if lam is not None:
+        print(f"  Lambda loaded: {lam}")
+    elif use_lagrangian:
+        print(f"  WARNING: USE_LAGRANGIAN=True but no lambda_state.npy found")
+
+    print(f"  ENV_ID: {env_id}, MAX_EVAL_EP_LENGTH: {max_ep_length}")
+
+    # Build env
+    env = DummyVecEnv([make_eval_env(env_id, max_ep_length, INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)])
+
+    if os.path.exists(vec_env_path):
+        env = VecNormalize.load(vec_env_path, env)
+        env.training = False
+        env.norm_reward = False
+    else:
+        warnings.warn(f"VecNormalize not found at {vec_env_path}")
+
+    # Load model
+    model = algo_class.load(zip_path, env=env, device=device,
+                            custom_objects={"learning_rate": 3e-4, "clip_range": 0.2})
+
+    episodes = []
+
+    for ep in range(n_episodes):
+        obs = env.reset()
+        done = False
+        state = None
+
+        ep_reward = 0.0
+        ep_discounted_reward = 0.0
+        ep_lagrangian_reward = 0.0
+        ep_lagrangian_discounted_reward = 0.0
+        ep_lagrangian_penalty_total = 0.0
+        ep_steps = 0
+        discount = 1.0
+
+        # Per-step accumulators
+        v_violation_steps = 0
+        p_violation_steps = 0
+        q_violation_steps = 0
+        any_violation_steps = 0
+        branch_overload_steps = 0
+        pfe_nonconverged = 0
+
+        # Continuous metrics
+        battery_soc_list = []
+        battery_power_list = []
+        curtailment_list = []
+        slack_import_list = []
+        slack_export_list = []
+        soc_boundary_list = []
+        branch_soft_list = []
+        q_magnitude_list = []
+        anm_penalty_list = []   # ANM6Easy penalty component (lamb*violations)
+
+        while not done:
+            action, state = model.predict(obs, state=state, deterministic=True)
+            obs, reward, dones, infos = env.step(action)
+            info = infos[0]
+            r = float(reward[0])
+
+            ep_reward += r
+            ep_discounted_reward += discount * r
+            ep_steps += 1
+
+            # Compute Lagrangian reward if lambda is available
+            lag_penalty = 0.0
+            if lam is not None:
+                costs = np.asarray(info.get("constraint_costs", [0, 0, 0]), dtype=np.float32)
+                if costs.shape[0] >= lam.shape[0]:
+                    lag_penalty = float(np.dot(lam, costs[:lam.shape[0]]))
+            lag_r = r - lag_penalty
+            ep_lagrangian_reward += lag_r
+            ep_lagrangian_discounted_reward += discount * lag_r
+            ep_lagrangian_penalty_total += lag_penalty
+
+            discount *= gamma
+
+            # Constraint costs
+            costs = np.asarray(info.get("constraint_costs", [0, 0, 0]), dtype=np.float32)
+            if costs[0] > 1e-6:
+                v_violation_steps += 1
+            if costs[1] > 1e-6:
+                p_violation_steps += 1
+            if costs[2] > 1e-6:
+                q_violation_steps += 1
+            if any(c > 1e-6 for c in costs):
+                any_violation_steps += 1
+
+            # Branch overload
+            br_over = float(info.get("constraint/branch_overload_pu_max", 0.0))
+            if br_over > 1e-6:
+                branch_overload_steps += 1
+
+            # PFE
+            if info.get("pfe_terminated", False):
+                pfe_nonconverged += 1
+
+            # Objective components
+            battery_soc_list.append(info.get("objective/battery_soc_mwh", 0.0))
+            curtailment_list.append(info.get("objective/curtailment_mw", 0.0))
+            slack_import_list.append(info.get("objective/cost_slack_import_mwh", 0.0))
+            slack_export_list.append(info.get("objective/cost_slack_export_mwh", 0.0))
+            soc_boundary_list.append(info.get("objective/cost_soc_boundary", 0.0))
+            branch_soft_list.append(info.get("objective/cost_branch_soft_mvah", 0.0))
+            q_magnitude_list.append(info.get("objective/cost_q_magnitude_mvarh", 0.0))
+
+            # ANM6Easy reward decomposition: reward_base_anm = -(e_loss + penalty)
+            # penalty = lamb * violations (lamb=100 in BCP). High penalty variance = instability.
+            anm_r = info.get("reward_base_anm", None)
+            if anm_r is not None:
+                # e_loss ≥ 0, penalty ≥ 0  →  reward_base_anm = -(e_loss + penalty)
+                # We proxy penalty as: reward_base_anm - (-e_loss_proxy)
+                # Direct: just track the raw reward per step (before VecNormalize)
+                anm_penalty_list.append(float(anm_r))
+
+            # Battery power (from dev_p of storage device)
+            slack_p = info.get("objective/slack_p_mw", 0.0)
+            battery_power_list.append(slack_p)  # will replace below if available
+
+            done = dones[0]
+
+        ep_data = {
+            "episode": ep,
+            "reward": ep_reward,
+            "discounted_reward": ep_discounted_reward,
+            "has_lambda": lam is not None,
+            "lagrangian_reward": ep_lagrangian_reward,
+            "lagrangian_discounted_reward": ep_lagrangian_discounted_reward,
+            "lagrangian_penalty_total": ep_lagrangian_penalty_total,
+            "steps": ep_steps,
+            # Violations (step counts)
+            "v_violation_steps": v_violation_steps,
+            "p_violation_steps": p_violation_steps,
+            "q_violation_steps": q_violation_steps,
+            "any_violation_steps": any_violation_steps,
+            "branch_overload_steps": branch_overload_steps,
+            "pfe_nonconverged": pfe_nonconverged,
+            # Violation fractions
+            "v_violation_frac": v_violation_steps / ep_steps,
+            "p_violation_frac": p_violation_steps / ep_steps,
+            "q_violation_frac": q_violation_steps / ep_steps,
+            "any_violation_frac": any_violation_steps / ep_steps,
+            "branch_overload_frac": branch_overload_steps / ep_steps,
+            # Battery
+            "battery_soc_mean": float(np.mean(battery_soc_list)),
+            "battery_soc_min": float(np.min(battery_soc_list)),
+            "battery_soc_max": float(np.max(battery_soc_list)),
+            "battery_soc_std": float(np.std(battery_soc_list)),
+            # Costs
+            "curtailment_mean_mw": float(np.mean(curtailment_list)),
+            "curtailment_total_mwh": float(np.sum(curtailment_list)),
+            "slack_import_total_mwh": float(np.sum(slack_import_list)),
+            "slack_export_total_mwh": float(np.sum(slack_export_list)),
+            "soc_boundary_total": float(np.sum(soc_boundary_list)),
+            "branch_soft_total_mvah": float(np.sum(branch_soft_list)),
+            "q_magnitude_total_mvarh": float(np.sum(q_magnitude_list)),
+            # Per-step reward stats: std reveals how much the penalty spikes
+            "anm_reward_per_step_mean": float(np.mean(anm_penalty_list)) if anm_penalty_list else 0.0,
+            "anm_reward_per_step_std":  float(np.std(anm_penalty_list))  if anm_penalty_list else 0.0,
+            "anm_reward_per_step_min":  float(np.min(anm_penalty_list))  if anm_penalty_list else 0.0,
+        }
+        episodes.append(ep_data)
+
+        safe = "SAFE" if any_violation_steps == 0 else f"{any_violation_steps} violations"
+        print(f"  Episode {ep+1}/{n_episodes}: reward={ep_reward:.1f}, "
+              f"disc={ep_discounted_reward:.1f}, steps={ep_steps}, {safe}")
+
+    env.close()
+    return episodes
+
+
+def print_summary(episodes, label=""):
+    """Print aggregate statistics across episodes."""
+    n = len(episodes)
+    header = f"  EVALUATION SUMMARY — {label}" if label else "  EVALUATION SUMMARY"
+    print(header)
+
+    def stat(key):
+        vals = [e[key] for e in episodes]
+        return np.mean(vals), np.std(vals), np.min(vals), np.max(vals)
+
+    # Reward
+    mu, sd, mn, mx = stat("reward")
+    print(f"\n  Reward (raw):             {mu:.1f} +/- {sd:.1f}  (min={mn:.1f}, max={mx:.1f})")
+    mu, sd, mn, mx = stat("discounted_reward")
+    print(f"  Reward (raw discounted):  {mu:.1f} +/- {sd:.1f}  (min={mn:.1f}, max={mx:.1f})")
+
+    # Lagrangian reward (only if non-zero)
+    lag_rewards = [e["lagrangian_reward"] for e in episodes]
+    if any(abs(r - e["reward"]) > 1e-6 for r, e in zip(lag_rewards, episodes)):
+        mu, sd, mn, mx = stat("lagrangian_reward")
+        print(f"Reward (lagrangian): {mu:.1f} +/- {sd:.1f}  (min={mn:.1f}, max={mx:.1f})")
+        mu, sd, mn, mx = stat("lagrangian_discounted_reward")
+        print(f"Reward (lagr. disc.): {mu:.1f} +/- {sd:.1f}  (min={mn:.1f}, max={mx:.1f})")
+        mu, sd, _, _ = stat("lagrangian_penalty_total")
+        print(f"Lagrangian penalty total: {mu:.1f} +/- {sd:.1f}")
+
+    # Episode length
+    mu, sd, _, _ = stat("steps")
+    print(f"Episode length: {mu:.0f} +/- {sd:.0f}")
+
+    # Violations
+    print(f"\n  Constraint Violations (mean steps per episode):")
+    for key, name in [
+        ("any_violation_steps", "Any"),
+        ("v_violation_steps", "Voltage"),
+        ("p_violation_steps", "Power/Branch"),
+        ("q_violation_steps", "Reactive"),
+        ("branch_overload_steps", "Branch overload"),
+    ]:
+        mu, sd, _, _ = stat(key)
+        mu_frac, _, _, _ = stat(key.replace("_steps", "_frac") if key != "branch_overload_steps" else "branch_overload_frac")
+        print(f"    {name:<20s}: {mu:6.1f} +/- {sd:4.1f}  ({mu_frac*100:5.1f}%)")
+
+    # Safety rate
+    safe_episodes = sum(1 for e in episodes if e["any_violation_steps"] == 0)
+    print(f"Safe episodes: {safe_episodes}/{n} ({safe_episodes/n*100:.1f}%)")
+
+    # PFE
+    pfe_total = sum(e["pfe_nonconverged"] for e in episodes)
+    print(f"PFE non-convergence: {pfe_total} total across {n} episodes")
+
+    # Battery
+    print(f"\nBattery:")
+    mu, sd, _, _ = stat("battery_soc_mean")
+    print(f"    Mean SoC: {mu:.1f} +/- {sd:.1f} MWh")
+    mu_min, _, _, _ = stat("battery_soc_min")
+    mu_max, _, _, _ = stat("battery_soc_max")
+    print(f"SoC range: [{mu_min:.1f}, {mu_max:.1f}] MWh (avg min/max)")
+
+    # Cost breakdown
+    print(f"\n  Cost Breakdown (mean per episode):")
+    for key, name, unit in [
+        ("curtailment_total_mwh", "Curtailment", "MWh"),
+        ("slack_import_total_mwh", "Grid import", "MWh"),
+        ("slack_export_total_mwh", "Grid export", "MWh"),
+        ("soc_boundary_total", "SoC boundary penalty", ""),
+        ("branch_soft_total_mvah", "Branch soft penalty", "MVAh"),
+        ("q_magnitude_total_mvarh", "Q magnitude", "MVArh"),
+    ]:
+        mu, sd, _, _ = stat(key)
+        print(f"    {name:<25s}: {mu:8.2f} +/- {sd:6.2f} {unit}")
+
+    # Reward-per-step variance: evidence of penalty spikes
+    if any(e.get("anm_reward_per_step_std", 0.0) > 0 for e in episodes):
+        mu_m, _, _, _ = stat("anm_reward_per_step_mean")
+        mu_s, _, _, _ = stat("anm_reward_per_step_std")
+        mu_n, _, _, _ = stat("anm_reward_per_step_min")
+        print(f"Mean per step: {mu_m:8.3f}")
+        print(f"Std  per step: {mu_s:8.3f}")
+        print(f"Min  per step: {mu_n:8.3f}")
+
+
+def save_results(episodes, run_path, label=""):
+    """Save detailed results to JSON."""
+    out_dir = os.path.join(run_path, "evaluation")
+    os.makedirs(out_dir, exist_ok=True)
+    out_file = os.path.join(out_dir, "eval_results.json")
+
+    output = {
+        "run_path": run_path,
+        "label": label,
+        "n_episodes": len(episodes),
+        "episodes": episodes,
+        "summary": {
+            "reward_mean": float(np.mean([e["reward"] for e in episodes])),
+            "reward_std": float(np.std([e["reward"] for e in episodes])),
+            "discounted_reward_mean": float(np.mean([e["discounted_reward"] for e in episodes])),
+            "lagrangian_reward_mean": float(np.mean([e["lagrangian_reward"] for e in episodes])),
+            "lagrangian_reward_std": float(np.std([e["lagrangian_reward"] for e in episodes])),
+            "lagrangian_penalty_mean": float(np.mean([e["lagrangian_penalty_total"] for e in episodes])),
+            "any_violation_frac_mean": float(np.mean([e["any_violation_frac"] for e in episodes])),
+            "branch_overload_frac_mean": float(np.mean([e["branch_overload_frac"] for e in episodes])),
+            "safe_episodes": sum(1 for e in episodes if e["any_violation_steps"] == 0),
+            "battery_soc_mean": float(np.mean([e["battery_soc_mean"] for e in episodes])),
+        },
+    }
+
+    with open(out_file, "w") as f:
+        json.dump(output, f, indent=2)
+    print(f"Results saved to: {out_file}")
+    return out_file
+
+
+def build_comparison_table(all_results):
+    """Build comparison table as a list of lines (for both printing and saving)."""
+    lines = []
+    lines.append("  COMPARISON TABLE")
+
+    header = f"  {'Metric':<30s}"
+    for label, _ in all_results:
+        header += f"  {label:>18s}"
+    lines.append(header)
+
+    sep = f"  {'-'*30}"
+    for _ in all_results:
+        sep += f"  {'-'*18}"
+    lines.append(sep)
+
+    metrics = [
+        ("Reward (raw)", "reward", ".1f"),
+        ("Disc. Reward (raw)", "discounted_reward", ".1f"),
+        ("Violations (%)", "any_violation_frac", ".1%"),
+        ("Branch overload (%)", "branch_overload_frac", ".1%"),
+        ("Battery SoC (MWh)", "battery_soc_mean", ".1f"),
+        ("Curtailment (MWh)", "curtailment_total_mwh", ".1f"),
+        ("Grid import (MWh)", "slack_import_total_mwh", ".1f"),
+        ("Q magnitude (MVArh)", "q_magnitude_total_mvarh", ".1f"),
+    ]
+
+    lagrangian_metrics = [
+        ("Reward (lagrangian)", "lagrangian_reward", ".1f"),
+        ("Lagr. penalty total", "lagrangian_penalty_total", ".1f"),
+    ]
+
+    for name, key, fmt in metrics:
+        row = f"  {name:<30s}"
+        for _, eps in all_results:
+            mu = np.mean([e[key] for e in eps])
+            sd = np.std([e[key] for e in eps])
+            val_str = f"{mu:{fmt}} +/- {sd:{fmt}}"
+            row += f"  {val_str:>18s}"
+        lines.append(row)
+
+    any_has_lambda = any(
+        eps[0].get("has_lambda", False) for _, eps in all_results
+    )
+    if any_has_lambda:
+        for name, key, fmt in lagrangian_metrics:
+            row = f"  {name:<30s}"
+            for _, eps in all_results:
+                if eps[0].get("has_lambda", False):
+                    mu = np.mean([e[key] for e in eps])
+                    sd = np.std([e[key] for e in eps])
+                    val_str = f"{mu:{fmt}} +/- {sd:{fmt}}"
+                    row += f"  {val_str:>18s}"
+                else:
+                    row += f"  {'N/A':>18s}"
+            lines.append(row)
+
+    row = f"  {'Safe episodes':<30s}"
+    for _, eps in all_results:
+        safe = sum(1 for e in eps if e["any_violation_steps"] == 0)
+        row += f"  {f'{safe}/{len(eps)}':>18s}"
+    lines.append(row)
+
+    return lines
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate trained RL agents")
+    parser.add_argument("agent", type=str, choices=["PPO", "SAC"], help="Algorithm")
+    parser.add_argument("--path", "-p", nargs="+", required=True, help="Run directory path(s)")
+    parser.add_argument("--labels", nargs="+", help="Labels for each run (for comparison)")
+    parser.add_argument("--episodes", "-n", type=int, default=20, help="Number of eval episodes")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--no-save", action="store_true", help="Don't save results to JSON")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    algo_class = PPO if args.agent == "PPO" else SAC
+    labels = args.labels if args.labels else [os.path.basename(p) for p in args.path]
+
+    all_results = []
+
+    for run_path, label in zip(args.path, labels):
+        print(f"\nEvaluating: {label}")
+        print(f"  Path: {run_path}")
+        print(f"  Episodes: {args.episodes}")
+        print()
+
+        episodes = evaluate_agent(
+            run_path, algo_class, args.episodes, GAMMA, seed=args.seed,
+        )
+        print_summary(episodes, label)
+
+        if not args.no_save:
+            save_results(episodes, run_path, label)
+
+        all_results.append((label, episodes))
+
+    # Comparison table if multiple runs
+    if len(all_results) > 1:
+        table_lines = build_comparison_table(all_results)
+        table_text = "\n".join(table_lines)
+        print(table_text)
+
+        if not args.no_save:
+            # Save to common parent directory
+            common_dir = os.path.commonpath(args.path)
+            if os.path.isfile(common_dir):
+                common_dir = os.path.dirname(common_dir)
+            table_path = os.path.join(common_dir, "comparison.txt")
+            with open(table_path, "w") as f:
+                f.write(table_text + "\n")
+            print(f"Comparison table saved to: {table_path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -60,6 +60,14 @@ def parse_args():
         help="Override USE_LAGRANGIAN from hyperparameters.py. "
              "--lagrangian forces Lagrangian, --no-lagrangian forces standard.",
     )
+    parser.add_argument(
+        "--bcp-reward",
+        action="store_true",
+        default=False,
+        help="Use BCP energy-only base reward with fixed penalty weights instead of "
+             "ANM6Easy reward. Only active when --no-lagrangian is set. "
+             "Allows fair comparison: same base reward as Lagrangian, but fixed lambdas.",
+    )
 
     args = parser.parse_args()
 

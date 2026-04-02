@@ -105,6 +105,8 @@ class EvalCallback(EventCallback):
         self.evaluations_constraint_q = []
         self.evaluations_constraint_branch_overload = []
         self.evaluations_pfe_nonconverged = []
+        self.evaluations_branch_overload_mva = []
+        self.evaluations_branch_loading_pct = []
 
     def _init_callback(self) -> None:
         if not isinstance(self.training_env, type(self.eval_env)):
@@ -165,6 +167,8 @@ class EvalCallback(EventCallback):
             self.evaluations_constraint_q.append(constraint_stats.get("q", []))
             self.evaluations_constraint_branch_overload.append(constraint_stats.get("branch_overload", []))
             self.evaluations_pfe_nonconverged.append(constraint_stats.get("pfe_nonconverged", []))
+            self.evaluations_branch_overload_mva.append(constraint_stats.get("branch_overload_mva", []))
+            self.evaluations_branch_loading_pct.append(constraint_stats.get("branch_loading_pct", []))
             np.savez(
                 self.log_path,
                 timesteps=self.evaluations_timesteps,
@@ -177,6 +181,8 @@ class EvalCallback(EventCallback):
                 constraint_q_steps=self.evaluations_constraint_q,
                 branch_overload_steps=self.evaluations_constraint_branch_overload,
                 pfe_nonconverged_steps=self.evaluations_pfe_nonconverged,
+                branch_overload_mva=self.evaluations_branch_overload_mva,
+                branch_loading_pct=self.evaluations_branch_loading_pct,
             )
 
         mean_reward = np.mean(episode_rewards)
@@ -208,6 +214,10 @@ class EvalCallback(EventCallback):
             )
             self.logger.record("eval/constraint_any_frac", float(any_frac))
             self.logger.record("eval/branch_overload_frac", float(br_frac))
+            mean_br_overload_mva = np.mean(constraint_stats.get("branch_overload_mva", [0.0]))
+            mean_br_loading_pct = np.mean(constraint_stats.get("branch_loading_pct", [100.0]))
+            self.logger.record("eval/mean_branch_overload_mva", float(mean_br_overload_mva))
+            self.logger.record("eval/mean_branch_loading_pct", float(mean_br_loading_pct))
         except Exception:
             pass
 
