@@ -168,7 +168,7 @@ class LagrangianWrapper(gym.Wrapper):
         self.cost_limit = np.array([v_tolerance, pq_limit, q_lim], dtype=np.float32)
         self.peak_weight = float(np.clip(peak_weight, 0.0, 1.0))
 
-        # FIX: assert di coerenza tra lambda_lr e n_envs
+        # coherence check between lambda_lr and n_envs
         if n_envs > 1 and lambda_lr > 0.0:
             raise ValueError(
                 f"n_envs={n_envs} > 1, use lambda_lr=0.0 and "
@@ -482,7 +482,6 @@ class BatteryClipWrapper(gym.Wrapper):
 
 
 class StandardPenaltyWrapper(gym.Wrapper):
-
     def __init__(self, env: gym.Env, w_v: float = 50.0, w_p: float = 50.0, w_q: float = 50.0):
         super().__init__(env)
         self.weights = np.array([w_v, w_p, w_q], dtype=np.float32)

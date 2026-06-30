@@ -113,45 +113,44 @@ def _load_model_safe(algo_class, zip_path: str, env, device: str):
 
 
 def wait_for_keypress(step_mode):
-    """
-    In step mode: wait for user to press a key.
-      ENTER / SPACE → next step
-      'q'           → exit visualization
-      'r'           → reset episode
-    In auto mode: returns True immediately (uses sleep instead).
-    Returns True to continue, False to exit.
-    """
+    """Wait for user input in step mode. Returns False to exit, a character otherwise."""
     if not step_mode:
         return True
 
-    print("\n[STEP MODE] Premi INVIO/SPAZIO=avanti | q=esci | r=reset | i=info", end="", flush=True)
+    print("\n[STEP MODE] Press ENTER/SPACE=next | q=quit | r=reset | i=info", end="", flush=True)
 
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
     try:
-        tty.setcbreak(fd)
-        # Clear any buffered input before reading
-        import fcntl, os
-        fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
+        import termios, tty, fcntl
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
         try:
-            while sys.stdin.read(1):
+            tty.setcbreak(fd)
+            # Clear any buffered input before reading
+            fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
+            try:
+                while sys.stdin.read(1):
+                    pass
+            except:
                 pass
-        except:
-            pass
-        # Reset to blocking mode
-        fcntl.fcntl(fd, fcntl.F_SETFL, 0)
+            fcntl.fcntl(fd, fcntl.F_SETFL, 0)
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    except (ImportError, AttributeError):
+        # Fallback for Windows: input() 
+        ch = input()
+        # Input mode: the user must press Enter; we interpret special characters
+        if ch.lower() == 'q':
+            return False
+        if ch.lower() == 'r':
+            return 'r'
+        if ch.lower() == 'i':
+            return 'i'
+        return ch  # space or enter
 
-        # Now read the actual keypress
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-    print()
-
-    if ch in ('q', 'Q', '\x03'):  # q, Q, or Ctrl+C
+    if ch in ('q', 'Q', '\x03'):
         return False
-    # Return the character (Space, Enter, 'r', 'i', etc.)
-    return ch  
+    return ch
 
 
 def get_anm_env(env):

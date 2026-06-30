@@ -28,6 +28,11 @@ def parse_args():
     return parser.parse_args()
 
 def load_episodes(jsonl_path: Path):
+    # Check path existence early to avoid unnecessary processing
+    if not jsonl_path.exists():
+        print(f"Warning: {jsonl_path} not found. Skipping this directory.")
+        return None
+
     """Parses jsonl and aggregates data into episodes."""
     episodes = []
     current_reward = 0.0

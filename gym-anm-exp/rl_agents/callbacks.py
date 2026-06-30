@@ -1,6 +1,4 @@
-"""
-Fix callbacks.py — EvalCallback
-"""
+# EvalCallback
 
 import os
 import warnings
@@ -17,50 +15,34 @@ from .evaluation import evaluate_policy
 
 
 class ProgressBarCallback(BaseCallback):
-    """
-    A callback to display a Progress Bar during training.
-
-    :param pbar: (tqdm.pbar) Progress bar object
-    """
-
-    def __init__(self, pbar):
+    def __init__(self, pbar, initial=0):
         super(ProgressBarCallback, self).__init__()
         self._pbar = pbar
+        self._pbar.n = initial  
 
     def _on_step(self):
-        # Update the progress bar:
-        self._pbar.n = self.num_timesteps
+        self._pbar.n = self.num_timesteps 
         self._pbar.update(0)
         return True
 
-
-# this callback uses the 'with' block, allowing for correct initialisation and destruction
 class ProgressBarManager(object):
-    """
-    A class that allows the use of the `with` keyword to display a training progress bar.
-
-    Example
-    -------
-    Using the progress bar manager to monitor training::
-
-        with ProgressBarManager(TRAIN_STEPS) as c:
-            model.learn(total_timesteps=TRAIN_STEPS, callback=[c])
-
-    """
-    def __init__(self, total_timesteps):  # init object with total timesteps
+    def __init__(self, total_timesteps, initial=0):
         self.pbar = None
         self.total_timesteps = total_timesteps
+        self.initial = initial
 
-    def __enter__(self):  # create the progress bar and callback, return the callback
-        self.pbar = tqdm(total=self.total_timesteps)
+    def __enter__(self):
+        self.pbar = tqdm(total=self.total_timesteps, initial=self.initial)
+        return ProgressBarCallback(self.pbar, initial=self.initial)
 
-        return ProgressBarCallback(self.pbar)
-
-    def __exit__(self, exc_type, exc_val, exc_tb):  # close the callback
+    def __exit__(self, exc_type, exc_val, exc_tb):
         self.pbar.n = self.total_timesteps
         self.pbar.update(0)
         self.pbar.close()
 
+"""
+Evaluation callback: can be called after n. iteration to evaluate the agent and save the best model 
+"""
 class EvalCallback(EventCallback):
 
     def __init__(
@@ -169,6 +151,7 @@ class EvalCallback(EventCallback):
             self.evaluations_pfe_nonconverged.append(constraint_stats.get("pfe_nonconverged", []))
             self.evaluations_branch_overload_mva.append(constraint_stats.get("branch_overload_mva", []))
             self.evaluations_branch_loading_pct.append(constraint_stats.get("branch_loading_pct", []))
+            os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
             np.savez(
                 self.log_path,
                 timesteps=self.evaluations_timesteps,

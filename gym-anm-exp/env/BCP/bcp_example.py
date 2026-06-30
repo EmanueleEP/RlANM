@@ -13,7 +13,7 @@ _LAMB = 2
 class BCP(BCP_base):
     """The :code:`BCP-v0` task."""
 
-    def __init__(self):
+    def __init__(self, profile_seed: int = 123, solar_scale: float = 1.0, load_scale: float = 1.0):
         observation = "state"  # fully observable environment
         K = 1
         delta_t = 0.25  # 15 minutes between timesteps
@@ -24,8 +24,9 @@ class BCP(BCP_base):
         super().__init__(observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping)
 
         # Consumption and maximum generation 24-hour time series.
-        self.P_loads = _get_load_time_series(0.1, 123)
-        self.P_maxs = _get_gen_time_series(0.5, 123)
+        # profile_seed=123 for training. Use different seed + scales for eval scenarios.
+        self.P_loads = _get_load_time_series(0.1, profile_seed) * load_scale
+        self.P_maxs  = _get_gen_time_series(0.5, profile_seed) * solar_scale
         
         # # load from file
         # P_loads, P_maxs, days = _load_profiles_from_csv(profiles_path, delta_t=self.delta_t)

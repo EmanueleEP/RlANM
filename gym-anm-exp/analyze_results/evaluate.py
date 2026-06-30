@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Evaluate a trained RL agent on the BCP environment.
 
@@ -26,6 +25,7 @@ from rl_agents.hyperparameters import (
     MAX_EVAL_EP_LENGTH as DEFAULT_MAX_EVAL_EP_LENGTH,
 )
 
+from rl_agents.utils import make_env_with_profile_seed
 
 def read_run_hyperparameters(run_path):
     """Read ENV_ID and MAX_EVAL_EP_LENGTH from a run's hyperparameters.txt."""
@@ -49,10 +49,17 @@ from rl_agents.wrappers import (
 )
 
 
-def make_eval_env(env_id, max_ep_length, include_branch_overload):
+def make_eval_env(env_id, max_ep_length, include_branch_overload,
+                  eval_profile_seed: int = 456,
+                  solar_scale: float = 1.0, load_scale: float = 1.0):
     """Build eval env without Lagrangian/Standard wrapper (raw reward)."""
     def _init():
-        env = gym.make(env_id)
+        env = make_env_with_profile_seed(
+            env_id,
+            profile_seed=eval_profile_seed,
+            solar_scale=solar_scale,
+            load_scale=load_scale,
+        )
         if hasattr(env, "include_branch_overload_in_constraints"):
             env.include_branch_overload_in_constraints = bool(include_branch_overload)
         env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
@@ -72,7 +79,9 @@ def load_lambda_state(run_path):
     return None
 
 
-def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42):
+def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
+                   eval_profile_seed=456, solar_scale=1.0, load_scale=1.0,
+                   env_id_override=None):
     """Run n_episodes and collect detailed metrics."""
 
     vec_env_path = os.path.join(run_path, "training_vec_env")
@@ -80,11 +89,11 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if not os.path.exists(zip_path):
-        raise FileNotFoundError(f"Model not found: {zip_path}")
+        raise FileNotFoundError(f"Model not found: {zip_path}. Training may not have completed.")
 
     # Read ENV_ID and MAX_EVAL_EP_LENGTH from run's hyperparameters
     hp = read_run_hyperparameters(run_path)
-    env_id = hp.get("ENV_ID", DEFAULT_ENV_ID)
+    env_id = env_id_override if env_id_override else hp.get("ENV_ID", DEFAULT_ENV_ID)
     max_ep_length = int(hp.get("MAX_EVAL_EP_LENGTH", DEFAULT_MAX_EVAL_EP_LENGTH))
     use_lagrangian = hp.get("USE_LAGRANGIAN", "False").lower() == "true"
 
@@ -98,7 +107,8 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42):
     print(f"  ENV_ID: {env_id}, MAX_EVAL_EP_LENGTH: {max_ep_length}")
 
     # Build env
-    env = DummyVecEnv([make_eval_env(env_id, max_ep_length, INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)])
+    env = DummyVecEnv([make_eval_env(env_id, max_ep_length, INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
+                                     eval_profile_seed, solar_scale, load_scale)])
 
     if os.path.exists(vec_env_path):
         env = VecNormalize.load(vec_env_path, env)
@@ -145,6 +155,11 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42):
         q_magnitude_list = []
         anm_penalty_list = []   # ANM6Easy penalty component (lamb*violations)
 
+        # Per-step violation magnitudes (only when violation occurs, to assess severity)
+        v_magnitude_list = []       # raw pu voltage violation when > 0
+        p_magnitude_list = []       # raw pu P/branch violation when > 0
+        branch_overload_mag_list = []  # raw pu branch overload when > 0
+
         while not done:
             action, state = model.predict(obs, state=state, deterministic=True)
             obs, reward, dones, infos = env.step(action)
@@ -172,8 +187,10 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42):
             costs = np.asarray(info.get("constraint_costs", [0, 0, 0]), dtype=np.float32)
             if costs[0] > 1e-6:
                 v_violation_steps += 1
+                v_magnitude_list.append(float(costs[0]))
             if costs[1] > 1e-6:
                 p_violation_steps += 1
+                p_magnitude_list.append(float(costs[1]))
             if costs[2] > 1e-6:
                 q_violation_steps += 1
             if any(c > 1e-6 for c in costs):
@@ -183,6 +200,7 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42):
             br_over = float(info.get("constraint/branch_overload_pu_max", 0.0))
             if br_over > 1e-6:
                 branch_overload_steps += 1
+                branch_overload_mag_list.append(br_over)
 
             # PFE
             if info.get("pfe_terminated", False):
@@ -251,6 +269,13 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42):
             "anm_reward_per_step_mean": float(np.mean(anm_penalty_list)) if anm_penalty_list else 0.0,
             "anm_reward_per_step_std":  float(np.std(anm_penalty_list))  if anm_penalty_list else 0.0,
             "anm_reward_per_step_min":  float(np.min(anm_penalty_list))  if anm_penalty_list else 0.0,
+            # Violation magnitude (when violation occurs): assess severity, not just frequency
+            "v_violation_mag_mean":  float(np.mean(v_magnitude_list))  if v_magnitude_list  else 0.0,
+            "v_violation_mag_max":   float(np.max(v_magnitude_list))   if v_magnitude_list  else 0.0,
+            "p_violation_mag_mean":  float(np.mean(p_magnitude_list))  if p_magnitude_list  else 0.0,
+            "p_violation_mag_max":   float(np.max(p_magnitude_list))   if p_magnitude_list  else 0.0,
+            "branch_overload_mag_mean": float(np.mean(branch_overload_mag_list)) if branch_overload_mag_list else 0.0,
+            "branch_overload_mag_max":  float(np.max(branch_overload_mag_list))  if branch_overload_mag_list else 0.0,
         }
         episodes.append(ep_data)
 
@@ -292,22 +317,27 @@ def print_summary(episodes, label=""):
     mu, sd, _, _ = stat("steps")
     print(f"Episode length: {mu:.0f} +/- {sd:.0f}")
 
-    # Violations
-    print(f"\n  Constraint Violations (mean steps per episode):")
-    for key, name in [
-        ("any_violation_steps", "Any"),
-        ("v_violation_steps", "Voltage"),
-        ("p_violation_steps", "Power/Branch"),
-        ("q_violation_steps", "Reactive"),
-        ("branch_overload_steps", "Branch overload"),
+    # Violations — frequency
+    print(f"\n  Constraint Violations:")
+    print(f"    {'Type':<20s}  {'Steps/ep':>10}  {'% steps':>10}  {'Var %':>10}  {'Mag mean':>10}  {'Mag max':>10}")
+    print(f"    {'-'*20}  {'-'*10}  {'-'*10}  {'-'*10}  {'-'*10}  {'-'*10}")
+
+    for key, name, frac_key, mag_mean_key, mag_max_key in [
+        ("any_violation_steps",   "Any",          "any_violation_frac",    None,                   None),
+        ("v_violation_steps",     "Voltage",      "v_violation_frac",      "v_violation_mag_mean",  "v_violation_mag_max"),
+        ("p_violation_steps",     "Power/Branch", "p_violation_frac",      "p_violation_mag_mean",  "p_violation_mag_max"),
+        ("q_violation_steps",     "Reactive",     "q_violation_frac",      None,                   None),
+        ("branch_overload_steps", "Branch overload", "branch_overload_frac", "branch_overload_mag_mean", "branch_overload_mag_max"),
     ]:
-        mu, sd, _, _ = stat(key)
-        mu_frac, _, _, _ = stat(key.replace("_steps", "_frac") if key != "branch_overload_steps" else "branch_overload_frac")
-        print(f"    {name:<20s}: {mu:6.1f} +/- {sd:4.1f}  ({mu_frac*100:5.1f}%)")
+        mu_steps, sd_steps, _, _ = stat(key)
+        mu_frac, sd_frac, _, _   = stat(frac_key)
+        mag_mean_str = f"{np.mean([e[mag_mean_key] for e in episodes]):.4f}" if mag_mean_key else "    —"
+        mag_max_str  = f"{np.max([e[mag_max_key]  for e in episodes]):.4f}" if mag_max_key  else "    —"
+        print(f"    {name:<20s}  {mu_steps:>7.1f}     {mu_frac*100:>7.1f}%   ±{sd_frac*100:>5.1f}%   {mag_mean_str:>10}  {mag_max_str:>10}")
 
     # Safety rate
     safe_episodes = sum(1 for e in episodes if e["any_violation_steps"] == 0)
-    print(f"Safe episodes: {safe_episodes}/{n} ({safe_episodes/n*100:.1f}%)")
+    print(f"\n  Safe episodes: {safe_episodes}/{n} ({safe_episodes/n*100:.1f}%)")
 
     # PFE
     pfe_total = sum(e["pfe_nonconverged"] for e in episodes)
@@ -395,6 +425,8 @@ def build_comparison_table(all_results):
         ("Disc. Reward (raw)", "discounted_reward", ".1f"),
         ("Violations (%)", "any_violation_frac", ".1%"),
         ("Branch overload (%)", "branch_overload_frac", ".1%"),
+        ("Branch overload mag (pu)", "branch_overload_mag_mean", ".4f"),
+        ("Voltage viol. mag (pu)", "v_violation_mag_mean", ".4f"),
         ("Battery SoC (MWh)", "battery_soc_mean", ".1f"),
         ("Curtailment (MWh)", "curtailment_total_mwh", ".1f"),
         ("Grid import (MWh)", "slack_import_total_mwh", ".1f"),
@@ -447,6 +479,17 @@ def parse_args():
     parser.add_argument("--labels", nargs="+", help="Labels for each run (for comparison)")
     parser.add_argument("--episodes", "-n", type=int, default=20, help="Number of eval episodes")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--eval-profile-seed", type=int, default=456,
+                        help="Seed for load/generation profiles. Default 456 (different from training 123).")
+    parser.add_argument("--solar-scale", type=float, default=1.0,
+                        help="Scale factor for solar generation profile. "
+                             "1.0=normal, 1.3=high solar (summer), 0.5=low solar (winter/cloudy).")
+    parser.add_argument("--load-scale", type=float, default=1.0,
+                        help="Scale factor for load profile. "
+                             "1.0=normal, 1.4=high load (winter), 0.8=low load (summer).")
+    parser.add_argument("--env-id", type=str, default=None,
+                        help="Override ENV_ID from hyperparameters.txt. Useful to evaluate "
+                             "ANM6Easy-trained agents on Custom_ANM6Easy-v0 for detailed metrics.")
     parser.add_argument("--no-save", action="store_true", help="Don't save results to JSON")
     return parser.parse_args()
 
@@ -466,7 +509,10 @@ def main():
         print()
 
         episodes = evaluate_agent(
-            run_path, algo_class, args.episodes, GAMMA, seed=args.seed,
+            run_path, algo_class, args.episodes, GAMMA,
+            seed=args.seed, eval_profile_seed=args.eval_profile_seed,
+            solar_scale=args.solar_scale, load_scale=args.load_scale,
+            env_id_override=args.env_id,
         )
         print_summary(episodes, label)
 

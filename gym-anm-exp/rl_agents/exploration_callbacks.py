@@ -100,11 +100,11 @@ class BatteryExplorationCallback(BaseCallback):
 
         base_env = self._get_base_env()
 
-        # 1. Cache battery limits on first call
+        # Cache battery limits on first call
         if hasattr(base_env, "simulator"):
             self._cache_limits(base_env)
 
-        # 2. Record raw policy intent and rescale to MW
+        # Record raw policy intent and rescale to MW
         raw_battery_action = None
         actions = self.locals.get("actions", None)
         if actions is not None and np.asarray(actions).shape[-1] > self._battery_action_idx:
@@ -113,7 +113,7 @@ class BatteryExplorationCallback(BaseCallback):
             self.raw_action_history.append(raw_battery_action)
             self.intended_mw_history.append(intended_mw)
 
-        # 3. Record physical outcome from simulator
+        # Record physical outcome from simulator
         if hasattr(base_env, "simulator"):
             full_state = base_env.simulator.state
             dev_p   = full_state.get("dev_p",  {}).get("MW",  {})
@@ -125,7 +125,7 @@ class BatteryExplorationCallback(BaseCallback):
             self.battery_usage_history.append(battery_p)
             self.soc_history.append(battery_soc)
 
-        # 4. Periodic statistics
+        # Periodic statistics
         if self.verbose > 0 and self.num_timesteps % 1000 == 0:
 
             if self.battery_usage_history:

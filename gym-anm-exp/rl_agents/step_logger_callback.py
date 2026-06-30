@@ -61,18 +61,16 @@ class StepLoggerCallback(BaseCallback):
         self.flush_every = int(flush_every)
         self._f = None
         self._n_written = 0
-        # Use a delta-based trigger (not modulo), because `num_timesteps` may
-        # increase by `n_envs` each rollout step and may never hit exact multiples
-        # of `log_every` (e.g. n_envs=6, log_every=1000).
+        # Use a delta-based trigger because num_timesteps may
+        # increase by n_envs each rollout step and may never hit exact multiples
+        # of log_every (e.g. n_envs=6, log_every=1000).
         self._last_logged_timestep = -1
 
     def _on_training_start(self) -> None:
         os.makedirs(os.path.dirname(self.log_path) or ".", exist_ok=True)
-        # Line-buffered so you can `tail -f` the file and see updates quickly,
-        # even when `log_every` is large and logs are infrequent.
         self._f = open(self.log_path, "a", encoding="utf-8", buffering=1)
         # Write a small marker so the file is created and visibly non-empty even
-        # when `log_every` is large and episodes are long.
+        # when log_every is large and episodes are long.
         self._f.write(json.dumps({"type": "meta", "event": "training_start", "timestep": int(self.num_timesteps)}) + "\n")
         self._f.flush()
         self._last_logged_timestep = int(self.num_timesteps)
@@ -94,7 +92,7 @@ class StepLoggerCallback(BaseCallback):
         obs = self.locals.get("new_obs", self.locals.get("obs", None))
 
         # Log periodically, but also log on episode boundaries so you always get some data
-        # even when `log_every` is large.
+        # even when log_every is large.
         done_any = False
         if isinstance(dones, (list, tuple, np.ndarray)):
             done_any = bool(np.any(dones))
@@ -122,10 +120,10 @@ class StepLoggerCallback(BaseCallback):
             row: Dict[str, Any] = {
                 "timestep": int(self.num_timesteps),
                 "env_idx": int(i),
-                # NOTE: `reward` here is whatever SB3 sees (may be normalized/clipped by VecNormalize).
+                # NOTE: reward here is whatever SB3 sees (may be normalized/clipped by VecNormalize).
                 "reward": _to_jsonable(reward_i),
                 # Best-effort raw env rewards (before VecNormalize). When LagrangianWrapper is enabled,
-                # it provides `original_reward` and `lagrangian_penalty`.
+                # it provides original_reward and lagrangian_penalty.
                 "reward_env": _to_jsonable(info_i.get("original_reward", None)),
                 "reward_lagrangian": _to_jsonable(
                     (float(info_i["original_reward"]) - float(info_i["lagrangian_penalty"]))

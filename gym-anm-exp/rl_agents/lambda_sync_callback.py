@@ -1,3 +1,5 @@
+# WARNING: MAY CONTAIN BUGS
+
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 from .wrappers import LagrangianWrapper

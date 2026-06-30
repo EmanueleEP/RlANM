@@ -11,34 +11,27 @@ import numpy as np
 from stable_baselines3.common import base_class
 from stable_baselines3.common.vec_env import VecEnv
 
+from .hyperparameters import GAMMA
 
 def _get_gamma(env: Union[gym.Env, VecEnv]) -> float:
     """
     Extract gamma (discount factor) from environment.
-    Handles both single envs and VecEnvs, including wrapped environments.
+    Falls back to GAMMA from hyperparameters if not found.
     """
-    # Default value if not found
-    default_gamma = 0.99
-    
-    # Try to get gamma directly
+    # Prova a ottenere gamma direttamente
     if hasattr(env, 'gamma'):
         return env.gamma
-    
-    # If VecEnv, try to get from first underlying env
+    # Se VecEnv, esamina il primo env interno
     if isinstance(env, VecEnv) and hasattr(env, 'envs') and len(env.envs) > 0:
         inner_env = env.envs[0]
-        # Unwrap to find gamma
         while hasattr(inner_env, 'env'):
             if hasattr(inner_env, 'gamma'):
                 return inner_env.gamma
             inner_env = inner_env.env
-        # Check unwrapped env
         if hasattr(inner_env, 'gamma'):
             return inner_env.gamma
-    
-    # If not found, return default
-    return default_gamma
-
+    # Default importato da hyperparameters
+    return GAMMA
 
 def evaluate_policy(
     model: "base_class.BaseAlgorithm",
