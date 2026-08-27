@@ -177,13 +177,14 @@ if __name__ == '__main__':
                     n_envs=N_ENVS,
                     peak_weight=PEAK_WEIGHT,
                 )
-            else:
+            elif USE_BCP_REWARD:
                 env = StandardPenaltyWrapper(
                     env,
                     w_v=STANDARD_PENALTY_W_V,
                     w_p=STANDARD_PENALTY_W_P,
                     w_q=STANDARD_PENALTY_W_Q,
                 )
+            # For standard ANM6Easy runs, preserve the environment's native reward.
 
             env = PFETerminateWrapper(
                 env,

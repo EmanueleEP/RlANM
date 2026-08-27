@@ -62,10 +62,10 @@ def parse_args():
     parser.add_argument(
         "--bcp-reward",
         action="store_true",
-        default=False,
+        default=None,
         help="Use BCP energy-only base reward with fixed penalty weights instead of "
              "ANM6Easy reward. Only active when --no-lagrangian is set. "
-             "Allows fair comparison: same base reward as Lagrangian, but fixed lambdas.",
+             "When omitted, use USE_BCP_REWARD from hyperparameters.py.",
     )
 
     args = parser.parse_args()

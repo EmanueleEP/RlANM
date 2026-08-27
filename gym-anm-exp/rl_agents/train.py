@@ -61,6 +61,7 @@ from .hyperparameters import (
     FORECAST_HORIZON_STEPS,
     PFE_TERMINATE_PENALTY,
     PFE_LAMBDA_STEPS,
+    LAMBDA_MAX,
     USE_BCP_REWARD as _USE_BCP_REWARD,
 )
 
