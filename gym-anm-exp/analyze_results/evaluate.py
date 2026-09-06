@@ -23,6 +23,14 @@ from rl_agents.hyperparameters import (
     INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
     ENV_ID as DEFAULT_ENV_ID,
     MAX_EVAL_EP_LENGTH as DEFAULT_MAX_EVAL_EP_LENGTH,
+    V_TOLERANCE,
+    PQ_LIMIT,
+    Q_LIMIT,
+    PEAK_WEIGHT,
+    LAMBDA_MAX,
+    PFE_TERMINATE_PENALTY,
+    PFE_LAMBDA_STEPS,
+    FORECAST_HORIZON_STEPS,
 )
 
 from rl_agents.utils import make_env_with_profile_seed
@@ -45,14 +53,21 @@ def read_run_hyperparameters(run_path):
     return params
 from rl_agents.wrappers import (
     TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper,
-    PFETerminateWrapper,
+    PFETerminateWrapper, LagrangianWrapper, ForecastObsWrapper,
 )
 
 
 def make_eval_env(env_id, max_ep_length, include_branch_overload,
                   eval_profile_seed: int = 456,
-                  solar_scale: float = 1.0, load_scale: float = 1.0):
-    """Build eval env without Lagrangian/Standard wrapper (raw reward)."""
+                  solar_scale: float = 1.0, load_scale: float = 1.0,
+                  lambda_values=None, v_tolerance: float = V_TOLERANCE,
+                  pq_limit: float = PQ_LIMIT, q_limit: float = Q_LIMIT,
+                  peak_weight: float = PEAK_WEIGHT,
+                  lambda_max: float = LAMBDA_MAX,
+                  pfe_penalty: float = PFE_TERMINATE_PENALTY,
+                  pfe_lambda_steps: float = PFE_LAMBDA_STEPS,
+                  forecast_horizon: int = FORECAST_HORIZON_STEPS):
+    """Build an eval env, optionally reproducing the frozen training reward."""
     def _init():
         env = make_env_with_profile_seed(
             env_id,
@@ -62,10 +77,29 @@ def make_eval_env(env_id, max_ep_length, include_branch_overload,
         )
         if hasattr(env, "include_branch_overload_in_constraints"):
             env.include_branch_overload_in_constraints = bool(include_branch_overload)
+        reproduce_lagrangian = lambda_values is not None
+        env.unwrapped.use_lagrangian_reward = reproduce_lagrangian
         env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
         env = NormalizeActionWrapper(env)
-        env = BatteryClipWrapper(env, clip_penalty_weight=0.0)
-        env = PFETerminateWrapper(env, penalty=20.0)
+        env = BatteryClipWrapper(env, clip_penalty_weight=10.0 if reproduce_lagrangian else 0.0)
+        if forecast_horizon > 0:
+            env = ForecastObsWrapper(env, horizon_steps=forecast_horizon)
+        if reproduce_lagrangian:
+            env = LagrangianWrapper(
+                env,
+                v_tolerance=v_tolerance,
+                pq_limit=pq_limit,
+                q_limit=q_limit,
+                lambda_lr=0.0,
+                lambda_init=lambda_values,
+                lambda_max=lambda_max,
+                peak_weight=peak_weight,
+            )
+        env = PFETerminateWrapper(
+            env,
+            penalty=pfe_penalty,
+            lambda_steps=pfe_lambda_steps if reproduce_lagrangian else 0.0,
+        )
         return env
     return _init
 
@@ -74,8 +108,10 @@ def load_lambda_state(run_path):
     """Load saved Lagrangian lambda values from a run directory."""
     lam_path = os.path.join(run_path, "lambda_state.npy")
     if os.path.exists(lam_path):
-        lam = np.load(lam_path, allow_pickle=True)
-        return np.asarray(lam, dtype=np.float32)
+        lam = np.asarray(np.load(lam_path, allow_pickle=False), dtype=np.float32)
+        if lam.shape != (3,) or not np.all(np.isfinite(lam)) or np.any(lam < 0):
+            raise ValueError(f"Invalid lambda state in {lam_path}: expected 3 finite, non-negative values")
+        return lam
     return None
 
 
@@ -96,9 +132,13 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
     env_id = env_id_override if env_id_override else hp.get("ENV_ID", DEFAULT_ENV_ID)
     max_ep_length = int(hp.get("MAX_EVAL_EP_LENGTH", DEFAULT_MAX_EVAL_EP_LENGTH))
     use_lagrangian = hp.get("USE_LAGRANGIAN", "False").lower() == "true"
+    include_branch_overload = (
+        hp.get("INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS", str(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)).lower()
+        == "true"
+    )
 
     # Load lambda for Lagrangian reward computation
-    lam = load_lambda_state(run_path)
+    lam = load_lambda_state(run_path) if use_lagrangian else None
     if lam is not None:
         print(f"  Lambda loaded: {lam}")
     elif use_lagrangian:
@@ -107,8 +147,27 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
     print(f"  ENV_ID: {env_id}, MAX_EVAL_EP_LENGTH: {max_ep_length}")
 
     # Build env
-    env = DummyVecEnv([make_eval_env(env_id, max_ep_length, INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
-                                     eval_profile_seed, solar_scale, load_scale)])
+    def saved_float(key, default):
+        value = hp.get(key)
+        return default if value in (None, "None") else float(value)
+
+    env = DummyVecEnv([make_eval_env(
+        env_id,
+        max_ep_length,
+        include_branch_overload,
+        eval_profile_seed,
+        solar_scale,
+        load_scale,
+        lambda_values=lam,
+        v_tolerance=saved_float("V_TOLERANCE", V_TOLERANCE),
+        pq_limit=saved_float("PQ_LIMIT", PQ_LIMIT),
+        q_limit=saved_float("Q_LIMIT", Q_LIMIT),
+        peak_weight=saved_float("PEAK_WEIGHT", PEAK_WEIGHT),
+        lambda_max=saved_float("LAMBDA_MAX", LAMBDA_MAX),
+        pfe_penalty=saved_float("PFE_TERMINATE_PENALTY", PFE_TERMINATE_PENALTY),
+        pfe_lambda_steps=saved_float("PFE_LAMBDA_STEPS", PFE_LAMBDA_STEPS),
+        forecast_horizon=int(saved_float("FORECAST_HORIZON_STEPS", FORECAST_HORIZON_STEPS)),
+    )])
 
     if os.path.exists(vec_env_path):
         env = VecNormalize.load(vec_env_path, env)
@@ -124,6 +183,9 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
     episodes = []
 
     for ep in range(n_episodes):
+        # VecEnv.seed() schedules the seed for the next reset. Offset it per
+        # episode to obtain a reproducible sequence of distinct trajectories.
+        env.seed(seed + ep)
         obs = env.reset()
         done = False
         state = None
@@ -169,19 +231,21 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
             action, state = model.predict(obs, state=state, deterministic=True)
             obs, reward, dones, infos = env.step(action)
             info = infos[0]
-            r = float(reward[0])
+            training_r = float(reward[0])
+            raw_r = float(info.get("reward_base_anm", training_r))
 
-            ep_reward += r
-            ep_discounted_reward += discount * r
+            ep_reward += raw_r
+            ep_discounted_reward += discount * raw_r
             ep_steps += 1
 
-            # Compute Lagrangian reward if lambda is available
-            lag_penalty = 0.0
+            # With lambda available, the environment stack already reproduces
+            # the training reward. Keep the ANM reward above as a separate metric.
             if lam is not None:
-                costs = np.asarray(info.get("constraint_costs", [0, 0, 0]), dtype=np.float32)
-                if costs.shape[0] >= lam.shape[0]:
-                    lag_penalty = float(np.dot(lam, costs[:lam.shape[0]]))
-            lag_r = r - lag_penalty
+                lag_penalty = float(info.get("lagrangian_penalty", 0.0))
+                lag_r = training_r
+            else:
+                lag_penalty = 0.0
+                lag_r = raw_r
             ep_lagrangian_reward += lag_r
             ep_lagrangian_discounted_reward += discount * lag_r
             ep_lagrangian_penalty_total += lag_penalty

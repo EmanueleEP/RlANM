@@ -46,7 +46,8 @@ def evaluate_policy(
 ) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
     """
     Runs policy for ``n_eval_episodes`` episodes and returns average reward.
-    This is made to work only with one env.
+    Vectorized evaluation is limited to one environment. Plain Gymnasium
+    environments are also supported.
 
     :param model: The RL agent you want to evaluate.
     :param env: The gym environment. In the case of a ``VecEnv``
@@ -65,8 +66,11 @@ def evaluate_policy(
     :return: Mean reward per episode, std of reward per episode, mean discounted reward per episode, std of discounted
         reward per episode. Returns ([float], [int], [float]) when ``return_episode_rewards`` is True.
     """
-    if isinstance(env, VecEnv):
-        assert env.num_envs == 1, "You must pass only one environment when using this function"
+    is_vec_env = isinstance(env, VecEnv)
+    if is_vec_env and env.num_envs != 1:
+        raise ValueError("You must pass only one environment when using this function")
+    if n_eval_episodes <= 0:
+        raise ValueError("n_eval_episodes must be >= 1")
 
     # Get gamma once before the loop
     gamma = _get_gamma(env)
@@ -77,8 +81,15 @@ def evaluate_policy(
     branch_overload_mva_episodes, branch_loading_pct_episodes = [], []
     for i in range(n_eval_episodes):
         # Avoid double reset, as VecEnv are reset automatically
-        if not isinstance(env, VecEnv) or i == 0:
-            obs = env.reset()
+        if not is_vec_env or i == 0:
+            reset_result = env.reset()
+            if is_vec_env:
+                obs = reset_result
+            elif isinstance(reset_result, tuple) and len(reset_result) == 2:
+                obs, _ = reset_result
+            else:
+                # Compatibility with pre-0.26 Gym environments.
+                obs = reset_result
         done, state = False, None
         episode_reward = 0.0
         episode_discounted_reward = 0.0
@@ -90,19 +101,32 @@ def evaluate_policy(
         branch_loading_pct_sum = 0.0
         while not done:
             action, state = model.predict(obs, state=state, deterministic=deterministic)
-            obs, rewards, dones, infos = env.step(action)
-
-            # Extract the data for the single environment (index 0)
-            reward = rewards[0]
-            done = dones[0] 
-            # The 'done' flag from VecEnv is True if terminated OR truncated,
+            step_result = env.step(action)
+            if is_vec_env:
+                obs, rewards, dones, infos = step_result
+                reward = float(np.asarray(rewards).reshape(-1)[0])
+                done = bool(np.asarray(dones).reshape(-1)[0])
+                info0 = infos[0] if isinstance(infos, (list, tuple)) and infos else (infos or {})
+            elif len(step_result) == 5:
+                obs, reward, terminated, truncated, info0 = step_result
+                reward = float(reward)
+                done = bool(terminated or truncated)
+                # Keep familiar names available to callback users.
+                rewards, dones, infos = reward, done, info0
+            elif len(step_result) == 4:
+                # Compatibility with pre-0.26 Gym environments.
+                obs, reward, done, info0 = step_result
+                reward = float(reward)
+                done = bool(done)
+                rewards, dones, infos = reward, done, info0
+            else:
+                raise ValueError("Environment step() must return 4 or 5 values")
 
             episode_reward += reward
             episode_discounted_reward += reward * (gamma ** episode_length)  # <-- USE EXTRACTED GAMMA
 
             # --- Constraint/violation accounting (optional) ---
             if return_constraint_stats:
-                info0 = infos[0] if isinstance(infos, (list, tuple)) and infos else (infos or {})
                 try:
                     if isinstance(info0, dict):
                         c = info0.get("constraint_costs", None)
