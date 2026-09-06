@@ -164,8 +164,9 @@ class BCP_base(ANMEnv):
         total_q_mvar = sum(abs(float(dev_q_dict.get(i, 0.0))) for i in controllable_q_ids)
         q_magnitude_mvarh = total_q_mvar * delta_t_h
 
+        v_violation_pu_max = float(np.max(v_violation)) if len(v_violation) > 0 else 0.0
         info["constraint_costs"] = build_constraint_costs(
-            v_violation_pu_max=float(np.max(v_violation)) if len(v_violation) > 0 else 0.0,
+            v_violation_pu_max=v_violation_pu_max,
             combined_p_constraint_pu=combined_p_constraint,
             q_violation_pu_max=q_violation_pu_max,
         )
@@ -174,7 +175,10 @@ class BCP_base(ANMEnv):
             Q_TOL_MAGNITUDE = 0.1
             q_magnitude_pu = float(total_q_mvar / base_mva) if base_mva else 0.0
             info["constraint_costs"][2] = q_magnitude_pu / Q_TOL_MAGNITUDE
+        info["constraint/v_violation_pu_max"] = v_violation_pu_max
         info["constraint/p_violation_pu_max"] = p_violation_pu_max
+        info["constraint/q_violation_pu_max"] = q_violation_pu_max
+        info["constraint/combined_p_violation_pu_max"] = combined_p_constraint
         info["constraint/branch_overload_pu_max"] = branch_overload_pu_max
 
         slack_p = float(dev_p_dict.get(0, 0.0))

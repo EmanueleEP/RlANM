@@ -66,7 +66,7 @@ from .hyperparameters import (
 )
 
 from .callbacks import ProgressBarManager, EvalCallback
-from .utils import save_hyperparameters, parse_args, make_log_dirs, make_env_with_profile_seed
+from .utils import save_hyperparameters, parse_args, make_log_dirs, make_env_with_profile_seed, get_training_config, make_monitor_session
 from .wrappers import (
     LagrangianWrapper,
     StandardPenaltyWrapper,
@@ -94,7 +94,7 @@ def _linear_schedule(initial_value: float, final_value: float = 0.0):
 
 def _make_train_env_factory(
     env_id,
-    run_log_dir,
+    monitor_dir,
     seed,
     max_ep_length,
     use_lagrangian,
@@ -155,7 +155,7 @@ def _make_train_env_factory(
                 penalty=pfe_penalty,
                 lambda_steps=pfe_lambda_steps if use_lagrangian else 0.0,
             )
-            env = Monitor(env, run_log_dir)
+            env = Monitor(env, os.path.join(monitor_dir, f"train_{rank}.monitor.csv"))
             env.reset(seed=seed + rank)
             return env
         return _init
@@ -164,7 +164,7 @@ def _make_train_env_factory(
 
 def _make_eval_env_factory(
     env_id,
-    run_log_dir,
+    monitor_dir,
     seed,
     max_ep_length,
     include_branch_overload,
@@ -185,7 +185,7 @@ def _make_eval_env_factory(
             if forecast_horizon and forecast_horizon > 0:
                 env = ForecastObsWrapper(env, horizon_steps=forecast_horizon)
             env = PFETerminateWrapper(env, penalty=pfe_penalty)
-            env = Monitor(env, run_log_dir)
+            env = Monitor(env, os.path.join(monitor_dir, f"eval_{rank}.monitor.csv"))
             env.reset(seed=seed + 1000 + rank)
             return env
         return _init
@@ -194,6 +194,9 @@ def _make_eval_env_factory(
 
 def main():
     args = parse_args()
+    if args.path is not None:
+        from .continue_training import main as resume_training
+        return resume_training(args)
 
     # Algorithm selection 
     if args.agent == "PPO":
@@ -203,7 +206,7 @@ def main():
     else:
         raise ValueError(f"Agent not supported: {args.agent}")
 
-    SEED = args.seed
+    SEED = args.seed if args.seed is not None else 1
 
     # Override steps from CLI 
     train_steps = int(args.steps) if args.steps is not None else _DEFAULT_TRAIN_STEPS
@@ -248,6 +251,7 @@ def main():
     # Save hyperparameters for this run (only if starting fresh) 
     if not continuing_training:
         save_hyperparameters(run_log_dir, {
+            **get_training_config(),
             "SEED": SEED,
             "ENV_ID": ENV_ID,
             "LOG_DIR": run_log_dir,
@@ -275,9 +279,10 @@ def main():
     set_random_seed(SEED)
 
     # Build environment factories 
+    monitor_dir = make_monitor_session(run_log_dir)
     train_factory = _make_train_env_factory(
         env_id=ENV_ID,
-        run_log_dir=run_log_dir,
+        monitor_dir=monitor_dir,
         seed=SEED,
         max_ep_length=MAX_TRAINING_EP_LENGTH,
         use_lagrangian=use_lagrangian,
@@ -299,7 +304,7 @@ def main():
     )
     eval_factory = _make_eval_env_factory(
         env_id=ENV_ID,
-        run_log_dir=run_log_dir,
+        monitor_dir=monitor_dir,
         seed=SEED,
         max_ep_length=MAX_EVAL_EP_LENGTH,
         include_branch_overload=INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,

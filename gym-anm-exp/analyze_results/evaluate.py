@@ -147,7 +147,8 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
         # Continuous metrics
         battery_soc_list = []
         battery_power_list = []
-        curtailment_list = []
+        curtailment_power_list = []
+        curtailment_energy_list = []
         slack_import_list = []
         slack_export_list = []
         soc_boundary_list = []
@@ -158,7 +159,11 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
         # Per-step violation magnitudes (only when violation occurs, to assess severity)
         v_magnitude_list = []       # raw pu voltage violation when > 0
         p_magnitude_list = []       # raw pu P/branch violation when > 0
+        q_violation_magnitude_list = []  # raw pu reactive-power violation when > 0
         branch_overload_mag_list = []  # raw pu branch overload when > 0
+        v_constraint_cost_list = []  # normalized costs consumed by the wrappers
+        p_constraint_cost_list = []
+        q_constraint_cost_list = []
 
         while not done:
             action, state = model.predict(obs, state=state, deterministic=True)
@@ -185,15 +190,25 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
 
             # Constraint costs
             costs = np.asarray(info.get("constraint_costs", [0, 0, 0]), dtype=np.float32)
-            if costs[0] > 1e-6:
+            v_constraint_cost_list.append(float(costs[0]))
+            p_constraint_cost_list.append(float(costs[1]))
+            q_constraint_cost_list.append(float(costs[2]))
+
+            # Physical violation magnitudes in pu. These are distinct from the
+            # normalized constraint_costs used by the learning wrappers.
+            v_magnitude = float(info.get("constraint/v_violation_pu_max", 0.0))
+            p_magnitude = float(info.get("constraint/combined_p_violation_pu_max", 0.0))
+            q_violation_magnitude = float(info.get("constraint/q_violation_pu_max", 0.0))
+            if v_magnitude > 1e-6:
                 v_violation_steps += 1
-                v_magnitude_list.append(float(costs[0]))
-            if costs[1] > 1e-6:
+                v_magnitude_list.append(v_magnitude)
+            if p_magnitude > 1e-6:
                 p_violation_steps += 1
-                p_magnitude_list.append(float(costs[1]))
-            if costs[2] > 1e-6:
+                p_magnitude_list.append(p_magnitude)
+            if q_violation_magnitude > 1e-6:
                 q_violation_steps += 1
-            if any(c > 1e-6 for c in costs):
+                q_violation_magnitude_list.append(q_violation_magnitude)
+            if max(v_magnitude, p_magnitude, q_violation_magnitude) > 1e-6:
                 any_violation_steps += 1
 
             # Branch overload
@@ -208,7 +223,8 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
 
             # Objective components
             battery_soc_list.append(info.get("objective/battery_soc_mwh", 0.0))
-            curtailment_list.append(info.get("objective/curtailment_mw", 0.0))
+            curtailment_power_list.append(info.get("objective/curtailment_mw", 0.0))
+            curtailment_energy_list.append(info.get("objective/cost_curtailment_mwh", 0.0))
             slack_import_list.append(info.get("objective/cost_slack_import_mwh", 0.0))
             slack_export_list.append(info.get("objective/cost_slack_export_mwh", 0.0))
             soc_boundary_list.append(info.get("objective/cost_soc_boundary", 0.0))
@@ -258,8 +274,8 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
             "battery_soc_max": float(np.max(battery_soc_list)),
             "battery_soc_std": float(np.std(battery_soc_list)),
             # Costs
-            "curtailment_mean_mw": float(np.mean(curtailment_list)),
-            "curtailment_total_mwh": float(np.sum(curtailment_list)),
+            "curtailment_mean_mw": float(np.mean(curtailment_power_list)),
+            "curtailment_total_mwh": float(np.sum(curtailment_energy_list)),
             "slack_import_total_mwh": float(np.sum(slack_import_list)),
             "slack_export_total_mwh": float(np.sum(slack_export_list)),
             "soc_boundary_total": float(np.sum(soc_boundary_list)),
@@ -274,8 +290,17 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
             "v_violation_mag_max":   float(np.max(v_magnitude_list))   if v_magnitude_list  else 0.0,
             "p_violation_mag_mean":  float(np.mean(p_magnitude_list))  if p_magnitude_list  else 0.0,
             "p_violation_mag_max":   float(np.max(p_magnitude_list))   if p_magnitude_list  else 0.0,
+            "q_violation_mag_mean":  float(np.mean(q_violation_magnitude_list)) if q_violation_magnitude_list else 0.0,
+            "q_violation_mag_max":   float(np.max(q_violation_magnitude_list))  if q_violation_magnitude_list else 0.0,
             "branch_overload_mag_mean": float(np.mean(branch_overload_mag_list)) if branch_overload_mag_list else 0.0,
             "branch_overload_mag_max":  float(np.max(branch_overload_mag_list))  if branch_overload_mag_list else 0.0,
+            # Dimensionless normalized costs used by the learning wrappers.
+            "v_constraint_cost_mean": float(np.mean(v_constraint_cost_list)),
+            "v_constraint_cost_max": float(np.max(v_constraint_cost_list)),
+            "p_constraint_cost_mean": float(np.mean(p_constraint_cost_list)),
+            "p_constraint_cost_max": float(np.max(p_constraint_cost_list)),
+            "q_constraint_cost_mean": float(np.mean(q_constraint_cost_list)),
+            "q_constraint_cost_max": float(np.max(q_constraint_cost_list)),
         }
         episodes.append(ep_data)
 
@@ -326,7 +351,7 @@ def print_summary(episodes, label=""):
         ("any_violation_steps",   "Any",          "any_violation_frac",    None,                   None),
         ("v_violation_steps",     "Voltage",      "v_violation_frac",      "v_violation_mag_mean",  "v_violation_mag_max"),
         ("p_violation_steps",     "Power/Branch", "p_violation_frac",      "p_violation_mag_mean",  "p_violation_mag_max"),
-        ("q_violation_steps",     "Reactive",     "q_violation_frac",      None,                   None),
+        ("q_violation_steps",     "Reactive",     "q_violation_frac",      "q_violation_mag_mean",  "q_violation_mag_max"),
         ("branch_overload_steps", "Branch overload", "branch_overload_frac", "branch_overload_mag_mean", "branch_overload_mag_max"),
     ]:
         mu_steps, sd_steps, _, _ = stat(key)
@@ -427,6 +452,8 @@ def build_comparison_table(all_results):
         ("Branch overload (%)", "branch_overload_frac", ".1%"),
         ("Branch overload mag (pu)", "branch_overload_mag_mean", ".4f"),
         ("Voltage viol. mag (pu)", "v_violation_mag_mean", ".4f"),
+        ("Power/branch viol. mag (pu)", "p_violation_mag_mean", ".4f"),
+        ("Reactive viol. mag (pu)", "q_violation_mag_mean", ".4f"),
         ("Battery SoC (MWh)", "battery_soc_mean", ".1f"),
         ("Curtailment (MWh)", "curtailment_total_mwh", ".1f"),
         ("Grid import (MWh)", "slack_import_total_mwh", ".1f"),

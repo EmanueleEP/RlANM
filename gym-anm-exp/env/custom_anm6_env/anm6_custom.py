@@ -200,12 +200,16 @@ class ANM6_Custom(ANMEnv):
 
         q_violation_pu_max = float(np.max(q_violation) / base_mva) if len(q_violation) > 0 else 0.0
 
+        v_violation_pu_max = float(np.max(v_violation)) if len(v_violation) > 0 else 0.0
         info["constraint_costs"] = build_constraint_costs(
-            v_violation_pu_max=float(np.max(v_violation)) if len(v_violation) > 0 else 0.0,
+            v_violation_pu_max=v_violation_pu_max,
             combined_p_constraint_pu=combined_p_constraint,
             q_violation_pu_max=q_violation_pu_max,
         )
+        info["constraint/v_violation_pu_max"] = v_violation_pu_max
         info["constraint/p_violation_pu_max"] = p_violation_pu_max
+        info["constraint/q_violation_pu_max"] = q_violation_pu_max
+        info["constraint/combined_p_violation_pu_max"] = combined_p_constraint
         info["constraint/branch_overload_pu_max"] = branch_overload_pu_max
 
         slack_p = float(dev_p_dict.get(0, 0.0))

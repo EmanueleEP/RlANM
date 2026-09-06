@@ -28,67 +28,73 @@ def parse_args():
     return parser.parse_args()
 
 def load_episodes(jsonl_path: Path):
-    # Check path existence early to avoid unnecessary processing
+    """Load exact episode summaries produced by StepLoggerCallback."""
     if not jsonl_path.exists():
         print(f"Warning: {jsonl_path} not found. Skipping this directory.")
         return None
 
-    """Parses jsonl and aggregates data into episodes."""
     episodes = []
-    current_reward = 0.0
-    current_violations = 0.0
-    current_steps = 0
-    
-    if not jsonl_path.exists():
-        print(f"Warning: {jsonl_path} not found.")
-        return None
+    legacy_rows = 0
+    malformed_rows = 0
 
     with open(jsonl_path, "r") as f:
-        for line in f:
+        for line_number, line in enumerate(f, start=1):
             try:
                 data = json.loads(line)
-                if data.get("type") == "meta":
-                    continue
-                
-                # Use environment reward (pre-normalization if possible)
-                reward = data.get("reward_env")
-                if reward is None:
-                    reward = data.get("reward", 0.0)
-                
-                current_reward += float(reward)
-                
-                # Check for any physical constraint violation
-                costs = data.get("constraint_costs", [0, 0, 0])
-                # We count the magnitude of violations
-                current_violations += sum(max(0, c) for c in costs)
-                
-                current_steps += 1
-                
-                if data.get("done", False):
-                    episodes.append({
-                        "reward": current_reward,
-                        "violations": current_violations,
-                        "steps": current_steps,
-                        "timestep": data.get("timestep", 0)
-                    })
-                    current_reward = 0.0
-                    current_violations = 0.0
-                    current_steps = 0
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
+                malformed_rows += 1
                 continue
-                
+            if not isinstance(data, dict):
+                malformed_rows += 1
+                continue
+
+            row_type = data.get("type")
+            if row_type == "episode_summary":
+                try:
+                    reward = float(data["reward"])
+                    steps = int(data["steps"])
+                    violations = data.get("violations")
+                    violations = np.nan if violations is None else float(violations)
+                    timestep = int(data.get("timestep", 0))
+                    if not np.isfinite(reward) or steps <= 0:
+                        raise ValueError
+                except (KeyError, TypeError, ValueError):
+                    print(f"Warning: invalid episode summary at {jsonl_path}:{line_number}; skipped.")
+                    continue
+                episodes.append({
+                    "reward": reward,
+                    "violations": violations,
+                    "steps": steps,
+                    "timestep": timestep,
+                })
+            elif row_type not in ("meta", "step_sample"):
+                legacy_rows += 1
+
+    if malformed_rows:
+        print(f"Warning: {malformed_rows} malformed rows in {jsonl_path} were skipped.")
+    if not episodes and legacy_rows:
+        print(
+            f"Warning: {jsonl_path} is a legacy sampled log and has no exact episode summaries. "
+            "It cannot be used for episode totals; generate new data with the updated logger."
+        )
     return episodes
 
 def moving_average(x, w):
-    if len(x) < w:
-        return x
-    return np.convolve(x, np.ones(w), 'valid') / w
+    if w <= 0:
+        raise ValueError("Smoothing window must be >= 1")
+    effective_window = min(len(x), w)
+    if effective_window == 0:
+        return np.asarray(x), effective_window
+    values = np.convolve(x, np.ones(effective_window), 'valid') / effective_window
+    return values, effective_window
 
 def main():
     args = parse_args()
+    if args.labels is not None and len(args.labels) != len(args.dirs):
+        raise ValueError("--labels must contain exactly one label for each directory")
     labels = args.labels if args.labels else [Path(d).name for d in args.dirs]
     
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
+    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=FIGSIZE, sharex=False)
 
@@ -106,30 +112,36 @@ def main():
         violations = np.array([e["violations"] for e in data])
         
         # 1. Convergence plot (smoothed)
-        smooth_rewards = moving_average(rewards, args.window)
-        smooth_x = timesteps[args.window-1:]
+        smooth_rewards, effective_window = moving_average(rewards, args.window)
+        smooth_x = timesteps[effective_window - 1:]
         ax1.plot(smooth_x, smooth_rewards, label=label, linewidth=2)
         
         # 2. Safety Magnitude plot (smoothed)
-        smooth_violations = moving_average(violations, args.window)
-        ax2.plot(smooth_x, smooth_violations, label=label, linewidth=2)
-        
-        # 3. Frequency calculation for the bar chart
-        safe_episodes = np.sum(violations < 1e-4)
-        safe_frac = (safe_episodes / len(violations)) * 100
-        safety_stats.append((label, safe_frac))
+        valid = np.isfinite(violations)
+        if np.any(valid):
+            valid_timesteps = timesteps[valid]
+            smooth_violations, violation_window = moving_average(violations[valid], args.window)
+            ax2.plot(valid_timesteps[violation_window - 1:], smooth_violations,
+                     label=label, linewidth=2)
+
+            # 3. Frequency calculation for episodes with complete constraint data
+            safe_episodes = np.sum(violations[valid] < 1e-4)
+            safe_frac = (safe_episodes / np.sum(valid)) * 100
+            safety_stats.append((label, safe_frac))
 
     # Formatting axes
     ax1.set_title("Reward per Episode")
     ax1.set_xlabel("Training Timesteps (millions)")
     ax1.set_ylabel("Cumulative Reward")
-    ax1.legend()
+    if ax1.lines:
+        ax1.legend()
     ax1.grid(True, alpha=0.3)
 
     ax2.set_title("Constraint Violations per Episode")
     ax2.set_xlabel("Training Timesteps (millions)")
     ax2.set_ylabel("Total Violation Magnitude")
-    ax2.legend()
+    if ax2.lines:
+        ax2.legend()
     ax2.grid(True, alpha=0.3)
     # Use symlog if violation range spans more than 2 orders of magnitude
     if safety_stats and any(s[1] < 100 for s in safety_stats):

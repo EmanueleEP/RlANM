@@ -14,6 +14,7 @@ The above example will use the <BASE_DIR> and <ENV_ID> variables from
 import os
 import numpy as np
 from .hyperparameters import BASE_DIR, ENV_ID
+from .utils import get_monitor_elapsed_time
 
 FOLDER = os.path.join(BASE_DIR, ENV_ID)
 run_folders = sorted([f for f in os.listdir(FOLDER) if f.startswith('run')])
@@ -48,18 +49,8 @@ for run_folder in run_folders:
         disc_result = np.mean(last_disc_results)
         ep_length = np.mean(last_ep_lengths)
         
-        # Load elapsed time from `monitor.csv`
-        monitor_path = os.path.join(FOLDER, run_folder, 'monitor.csv')
-        t = None
-        if os.path.exists(monitor_path):
-            with open(monitor_path, 'r') as f:
-                lines = f.readlines()
-                if len(lines) > 2:  # Header + at least one data line
-                    try:
-                        r, l, t = lines[-1].strip().split(',')
-                        t = float(t)
-                    except (ValueError, IndexError):
-                        t = None
+        # Include resumed sessions, but do not sum concurrent environments.
+        t = get_monitor_elapsed_time(os.path.join(FOLDER, run_folder))
         
         # Load name of algo from `hyperparameters.txt`.
         hyper_path = os.path.join(FOLDER, run_folder, 'hyperparameters.txt')

@@ -36,6 +36,7 @@ def _to_jsonable(x: Any, *, max_list_elems: int = 200) -> Any:
 class StepLoggerCallback(BaseCallback):
     """
     Writes a JSONL step log with key training signals:
+    - exact reward and constraint totals at each episode boundary
     - timestep, env index, action, reward, done
     - objective reward components (from env info)
     - constraint_costs + lagrangian penalty/lambda if enabled
@@ -61,6 +62,7 @@ class StepLoggerCallback(BaseCallback):
         self.flush_every = int(flush_every)
         self._f = None
         self._n_written = 0
+        self._episodes = {}
         # Use a delta-based trigger because num_timesteps may
         # increase by n_envs each rollout step and may never hit exact multiples
         # of log_every (e.g. n_envs=6, log_every=1000).
@@ -71,7 +73,13 @@ class StepLoggerCallback(BaseCallback):
         self._f = open(self.log_path, "a", encoding="utf-8", buffering=1)
         # Write a small marker so the file is created and visibly non-empty even
         # when log_every is large and episodes are long.
-        self._f.write(json.dumps({"type": "meta", "event": "training_start", "timestep": int(self.num_timesteps)}) + "\n")
+        self._f.write(json.dumps({
+            "type": "meta",
+            "event": "training_start",
+            "timestep": int(self.num_timesteps),
+            "log_every": self.log_every,
+            "n_envs": int(getattr(self.training_env, "num_envs", 1)),
+        }) + "\n")
         self._f.flush()
         self._last_logged_timestep = int(self.num_timesteps)
 
@@ -91,19 +99,13 @@ class StepLoggerCallback(BaseCallback):
         actions = self.locals.get("actions", None)
         obs = self.locals.get("new_obs", self.locals.get("obs", None))
 
-        # Log periodically, but also log on episode boundaries so you always get some data
-        # even when log_every is large.
+        # Episode summaries are accumulated at every step. Periodic rows remain
+        # samples and must not be used to reconstruct episode totals.
         done_any = False
         if isinstance(dones, (list, tuple, np.ndarray)):
             done_any = bool(np.any(dones))
         elif dones is not None:
             done_any = bool(dones)
-
-        # Log when enough SB3 timesteps have elapsed since the last log, but also
-        # always log on episode boundaries.
-        if (not done_any) and (int(self.num_timesteps) - int(self._last_logged_timestep) < self.log_every):
-            return True
-        self._last_logged_timestep = int(self.num_timesteps)
 
         # VecEnv case: arrays/lists per env
         n_envs = 1
@@ -114,10 +116,61 @@ class StepLoggerCallback(BaseCallback):
             info_i: Dict[str, Any] = infos[i] if isinstance(infos, (list, tuple)) else (infos or {})
             reward_i = rewards[i] if isinstance(rewards, (list, tuple, np.ndarray)) else rewards
             done_i = dones[i] if isinstance(dones, (list, tuple, np.ndarray)) else dones
+
+            episode = self._episodes.setdefault(i, {
+                "reward": 0.0,
+                "violations": 0.0,
+                "steps": 0,
+                "constraints_complete": True,
+            })
+            monitor_episode = info_i.get("episode", {})
+            raw_reward = info_i.get("original_reward", reward_i)
+            if raw_reward is not None:
+                episode["reward"] += float(raw_reward)
+            costs = info_i.get("constraint_costs")
+            if costs is None:
+                episode["constraints_complete"] = False
+            else:
+                costs_array = np.asarray(costs, dtype=float).reshape(-1)
+                if not np.all(np.isfinite(costs_array)):
+                    episode["constraints_complete"] = False
+                else:
+                    episode["violations"] += float(np.maximum(costs_array, 0.0).sum())
+            episode["steps"] += 1
+
+            if done_i:
+                summary = {
+                    "type": "episode_summary",
+                    "timestep": int(self.num_timesteps),
+                    "env_idx": int(i),
+                    "reward": float(monitor_episode.get("r", episode["reward"])),
+                    "violations": (
+                        float(episode["violations"])
+                        if episode["constraints_complete"] else None
+                    ),
+                    "steps": int(monitor_episode.get("l", episode["steps"])),
+                    "constraints_complete": bool(episode["constraints_complete"]),
+                }
+                self._f.write(json.dumps(summary) + "\n")
+                self._n_written += 1
+                self._episodes.pop(i, None)
+
+        should_log_steps = done_any or (
+            int(self.num_timesteps) - int(self._last_logged_timestep) >= self.log_every
+        )
+        if not should_log_steps:
+            return True
+        self._last_logged_timestep = int(self.num_timesteps)
+
+        for i in range(n_envs):
+            info_i: Dict[str, Any] = infos[i] if isinstance(infos, (list, tuple)) else (infos or {})
+            reward_i = rewards[i] if isinstance(rewards, (list, tuple, np.ndarray)) else rewards
+            done_i = dones[i] if isinstance(dones, (list, tuple, np.ndarray)) else dones
             action_i = actions[i] if isinstance(actions, (list, tuple, np.ndarray)) else actions
             obs_i = obs[i] if isinstance(obs, (list, tuple, np.ndarray)) and n_envs > 1 else obs
 
             row: Dict[str, Any] = {
+                "type": "step_sample",
                 "timestep": int(self.num_timesteps),
                 "env_idx": int(i),
                 # NOTE: reward here is whatever SB3 sees (may be normalized/clipped by VecNormalize).

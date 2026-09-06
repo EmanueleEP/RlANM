@@ -7,10 +7,12 @@ environment wrappers, normalization statistics, and (if Lagrangian) lambda value
 Usage:
     python -m rl_agents.continue_training <ALGO> -p <LOG_DIR> -s <SEED> [--steps N]
 
-All hyperparameters are taken from hyperparameters.py.
+Saved hyperparameters take precedence over current defaults; explicit CLI options
+take precedence over the saved configuration.
 """
 
 import os
+from types import SimpleNamespace
 import numpy as np
 import gymnasium as gym
 import torch
@@ -21,46 +23,9 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 
-from .hyperparameters import (
-    ENV_ID,
-    GAMMA,
-    POLICY,
-    EVAL_FREQ,
-    N_EVAL_EPISODES,
-    MAX_TRAINING_EP_LENGTH,
-    MAX_EVAL_EP_LENGTH,
-    TB_LOG_NAME,
-    USE_LAGRANGIAN,
-    N_ENVS,
-    STANDARD_PENALTY_W_V,
-    STANDARD_PENALTY_W_P,
-    STANDARD_PENALTY_W_Q,
-    INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
-    TRAIN_STEPS as _DEFAULT_TRAIN_STEPS,
-    V_TOLERANCE,
-    PQ_LIMIT,
-    Q_LIMIT,
-    LAMBDA_LR,
-    PEAK_WEIGHT,
-    PPO_LR_INITIAL,
-    PPO_LR_FINAL,
-    PPO_CLIP_INITIAL,
-    PPO_CLIP_FINAL,
-    PPO_TARGET_KL,
-    SAC_LR,
-    NORM_OBS,
-    NORM_REWARD,
-    CLIP_OBS,
-    CLIP_REWARD,
-    FORECAST_HORIZON_STEPS,
-    PFE_TERMINATE_PENALTY,
-    PFE_LAMBDA_STEPS,
-    LAMBDA_MAX,
-    USE_BCP_REWARD,
-)
 
 from .callbacks import ProgressBarManager, EvalCallback
-from .utils import parse_args, make_env_with_profile_seed
+from .utils import parse_args, make_env_with_profile_seed, resolve_resume_config, make_monitor_session
 from .wrappers import (
     LagrangianWrapper,
     StandardPenaltyWrapper,
@@ -86,10 +51,9 @@ def _linear_schedule(initial_value: float, final_value: float = 0.0):
     return func
 
 
-if __name__ == '__main__':
+def main(args=None):
 
-    args = parse_args()
-    SEED = args.seed
+    args = parse_args() if args is None else args
     LOG_DIR = args.path
 
     if LOG_DIR is None:
@@ -115,15 +79,20 @@ if __name__ == '__main__':
     if not os.path.exists(AGENT_PATH):
         raise FileNotFoundError(f"No model found at {AGENT_PATH}")
 
+    cfg = SimpleNamespace(**resolve_resume_config(args))
+    SEED = cfg.SEED
+    print(f"Resume configuration: ENV_ID={cfg.ENV_ID}, "
+          f"USE_LAGRANGIAN={cfg.USE_LAGRANGIAN}, USE_BCP_REWARD={cfg.USE_BCP_REWARD}")
+
     print(f"Continuing training from {AGENT_PATH}")
 
     # Restore lambda from disk
     lambda_init_value = np.array([0.5, 0.5, 0.5], dtype=np.float32)
-    if USE_LAGRANGIAN and os.path.exists(LAMBDA_PATH):
+    if cfg.USE_LAGRANGIAN and os.path.exists(LAMBDA_PATH):
         try:
             loaded = np.load(LAMBDA_PATH).astype(np.float32)
             if loaded.shape == (3,):
-                lambda_init_value = np.clip(loaded, 0.0, LAMBDA_MAX)
+                lambda_init_value = np.clip(loaded, 0.0, cfg.LAMBDA_MAX)
                 print(f"Restored lambda: {lambda_init_value}")
             else:
                 print(f"WARNING: lambda shape {loaded.shape} unexpected, using defaults.")
@@ -141,49 +110,51 @@ if __name__ == '__main__':
 
     # Set seed
     set_random_seed(SEED)
+    monitor_dir = make_monitor_session(LOG_DIR)
 
     # Environment factories (identical to train.py)
     def make_train_env(rank: int = 0):
         def _init():
-            env = gym.make(ENV_ID)
+            env = gym.make(cfg.ENV_ID)
             if hasattr(env, "include_branch_overload_in_constraints"):
-                env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
-            env.unwrapped.use_lagrangian_reward = bool(USE_LAGRANGIAN or USE_BCP_REWARD)
+                env.include_branch_overload_in_constraints = bool(cfg.INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
+            env.unwrapped.use_lagrangian_reward = bool(cfg.USE_LAGRANGIAN or cfg.USE_BCP_REWARD)
 
-            env = TimeLimitWrapper(env, max_episode_steps=MAX_TRAINING_EP_LENGTH)
+            env = TimeLimitWrapper(env, max_episode_steps=cfg.MAX_TRAINING_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env)
 
-            if FORECAST_HORIZON_STEPS > 0:
-                env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
+            if cfg.FORECAST_HORIZON_STEPS > 0:
+                env = ForecastObsWrapper(env, horizon_steps=cfg.FORECAST_HORIZON_STEPS)
 
-            if USE_LAGRANGIAN:
-                effective_lr = 0.0 if (N_ENVS > 1) else LAMBDA_LR
+            if cfg.USE_LAGRANGIAN:
+                effective_lr = 0.0 if (cfg.N_ENVS > 1) else cfg.LAMBDA_LR
                 env = LagrangianWrapper(
                     env,
-                    v_tolerance=V_TOLERANCE,
-                    pq_limit=PQ_LIMIT,
-                    q_limit=Q_LIMIT,
+                    v_tolerance=cfg.V_TOLERANCE,
+                    pq_limit=cfg.PQ_LIMIT,
+                    q_limit=cfg.Q_LIMIT,
                     lambda_lr=effective_lr,
                     lambda_init=lambda_init_value,
-                    n_envs=N_ENVS,
-                    peak_weight=PEAK_WEIGHT,
+                    n_envs=cfg.N_ENVS,
+                    peak_weight=cfg.PEAK_WEIGHT,
+                    lambda_max=cfg.LAMBDA_MAX,
                 )
-            elif USE_BCP_REWARD:
+            elif cfg.USE_BCP_REWARD:
                 env = StandardPenaltyWrapper(
                     env,
-                    w_v=STANDARD_PENALTY_W_V,
-                    w_p=STANDARD_PENALTY_W_P,
-                    w_q=STANDARD_PENALTY_W_Q,
+                    w_v=cfg.STANDARD_PENALTY_W_V,
+                    w_p=cfg.STANDARD_PENALTY_W_P,
+                    w_q=cfg.STANDARD_PENALTY_W_Q,
                 )
             # For standard ANM6Easy runs, preserve the environment's native reward.
 
             env = PFETerminateWrapper(
                 env,
-                penalty=PFE_TERMINATE_PENALTY,
-                lambda_steps=PFE_LAMBDA_STEPS if USE_LAGRANGIAN else 0.0,
+                penalty=cfg.PFE_TERMINATE_PENALTY,
+                lambda_steps=cfg.PFE_LAMBDA_STEPS if cfg.USE_LAGRANGIAN else 0.0,
             )
-            env = Monitor(env, LOG_DIR)
+            env = Monitor(env, os.path.join(monitor_dir, f"train_{rank}.monitor.csv"))
             env.reset(seed=SEED + rank)
             return env
         return _init
@@ -191,22 +162,22 @@ if __name__ == '__main__':
     def make_eval_env(rank: int = 0):
         """Evaluation env: no penalty wrappers, only the termination penalty."""
         def _init():
-            env = make_env_with_profile_seed(ENV_ID, profile_seed=456)  # fixed seed for eval
+            env = make_env_with_profile_seed(cfg.ENV_ID, profile_seed=456)  # fixed seed for eval
             if hasattr(env, "include_branch_overload_in_constraints"):
-                env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
-            env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
+                env.include_branch_overload_in_constraints = bool(cfg.INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
+            env = TimeLimitWrapper(env, max_episode_steps=cfg.MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env, clip_penalty_weight=0.0)
-            if FORECAST_HORIZON_STEPS > 0:
-                env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
-            env = PFETerminateWrapper(env, penalty=PFE_TERMINATE_PENALTY)
-            env = Monitor(env, LOG_DIR)
+            if cfg.FORECAST_HORIZON_STEPS > 0:
+                env = ForecastObsWrapper(env, horizon_steps=cfg.FORECAST_HORIZON_STEPS)
+            env = PFETerminateWrapper(env, penalty=cfg.PFE_TERMINATE_PENALTY)
+            env = Monitor(env, os.path.join(monitor_dir, f"eval_{rank}.monitor.csv"))
             env.reset(seed=SEED + 1000 + rank)
             return env
         return _init
 
     print("Creating environments...")
-    train_env = DummyVecEnv([make_train_env(rank=i) for i in range(N_ENVS)])
+    train_env = DummyVecEnv([make_train_env(rank=i) for i in range(cfg.N_ENVS)])
     eval_env = DummyVecEnv([make_eval_env(rank=0)])
 
     # Load or create VecNormalize
@@ -214,7 +185,7 @@ if __name__ == '__main__':
         print(f"Loading VecNormalize from {ENV_PATH}")
         train_env = VecNormalize.load(ENV_PATH, train_env)
         train_env.training = True
-        train_env.norm_reward = NORM_REWARD
+        train_env.norm_reward = cfg.NORM_REWARD
         eval_env = VecNormalize.load(ENV_PATH, eval_env)
         eval_env.training = False
         eval_env.norm_reward = False
@@ -222,20 +193,20 @@ if __name__ == '__main__':
         print("No saved VecNormalize found; creating fresh.")
         train_env = VecNormalize(
             train_env,
-            gamma=GAMMA,
+            gamma=cfg.GAMMA,
             training=True,
-            norm_obs=NORM_OBS,
-            norm_reward=NORM_REWARD,
-            clip_obs=CLIP_OBS,
-            clip_reward=CLIP_REWARD,
+            norm_obs=cfg.NORM_OBS,
+            norm_reward=cfg.NORM_REWARD,
+            clip_obs=cfg.CLIP_OBS,
+            clip_reward=cfg.CLIP_REWARD,
         )
         eval_env = VecNormalize(
             eval_env,
-            gamma=GAMMA,
+            gamma=cfg.GAMMA,
             training=False,
-            norm_obs=NORM_OBS,
+            norm_obs=cfg.NORM_OBS,
             norm_reward=False,
-            clip_obs=CLIP_OBS,
+            clip_obs=cfg.CLIP_OBS,
         )
     print("Environments ready.")
 
@@ -246,7 +217,7 @@ if __name__ == '__main__':
     print(f"Current model timesteps: {current_timesteps}")
 
     # Training steps
-    additional_steps = _DEFAULT_TRAIN_STEPS if args.steps is None else int(args.steps)
+    additional_steps = cfg.TRAIN_STEPS
     total_timesteps = current_timesteps + additional_steps
     print(f"Additional steps: {additional_steps}, Total after: {total_timesteps}")
 
@@ -257,22 +228,24 @@ if __name__ == '__main__':
         # In practice, the schedule is computed based on progress_remaining passed by SB3,
         # which is (total_timesteps - self.num_timesteps) / total_timesteps.
         # Since self.num_timesteps starts at current_timesteps, the progress is computed correctly.
-        model.learning_rate = _linear_schedule(PPO_LR_INITIAL, PPO_LR_FINAL)
-        model.clip_range = _linear_schedule(PPO_CLIP_INITIAL, PPO_CLIP_FINAL)
-        print(f"PPO LR schedule: {PPO_LR_INITIAL} → {PPO_LR_FINAL} over {total_timesteps} total steps")
+        model.learning_rate = _linear_schedule(cfg.PPO_LR_INITIAL, cfg.PPO_LR_FINAL)
+        model.clip_range = _linear_schedule(cfg.PPO_CLIP_INITIAL, cfg.PPO_CLIP_FINAL)
+        print(f"PPO LR schedule: {cfg.PPO_LR_INITIAL} → {cfg.PPO_LR_FINAL} over {total_timesteps} total steps")
     else:  # SAC
-        model.learning_rate = SAC_LR
-        print(f"SAC LR set to constant: {SAC_LR}")
+        model.learning_rate = cfg.SAC_LR
+        print(f"SAC LR set to constant: {cfg.SAC_LR}")
+
+    model._setup_lr_schedule()
 
     # Callbacks
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=LOG_DIR,
         log_path=LOG_DIR,
-        eval_freq=EVAL_FREQ,
+        eval_freq=cfg.EVAL_FREQ,
         deterministic=True,
         render=False,
-        n_eval_episodes=N_EVAL_EPISODES,
+        n_eval_episodes=cfg.N_EVAL_EPISODES,
         verbose=True,
     )
 
@@ -286,13 +259,13 @@ if __name__ == '__main__':
 
     callbacks = [eval_callback]
 
-    if USE_LAGRANGIAN and N_ENVS > 1:
+    if cfg.USE_LAGRANGIAN and cfg.N_ENVS > 1:
         callbacks.append(
             LambdaSyncCallback(
                 train_env,
-                dual_lr=LAMBDA_LR,
+                dual_lr=cfg.LAMBDA_LR,
                 verbose=1,
-                peak_weight=PEAK_WEIGHT,
+                peak_weight=cfg.PEAK_WEIGHT,
             )
         )
 
@@ -314,13 +287,13 @@ if __name__ == '__main__':
         callbacks.append(pbar_callback)
         model.learn(
             total_timesteps=additional_steps,
-            tb_log_name=TB_LOG_NAME,
+            tb_log_name=cfg.TB_LOG_NAME,
             callback=callbacks,
             reset_num_timesteps=False,
         )
 
     # Save final lambda
-    if USE_LAGRANGIAN:
+    if cfg.USE_LAGRANGIAN:
         try:
             def unwrap_envs(vec_env):
                 inner = vec_env
@@ -340,7 +313,7 @@ if __name__ == '__main__':
             if lambdas:
                 avg_lambda = np.mean(np.stack(lambdas, axis=0), axis=0)
                 assert avg_lambda.shape == (3,)
-                assert np.all(avg_lambda >= 0) and np.all(avg_lambda <= LAMBDA_MAX)
+                assert np.all(avg_lambda >= 0) and np.all(avg_lambda <= cfg.LAMBDA_MAX)
                 if os.path.exists(LAMBDA_PATH):
                     np.save(LAMBDA_PATH.replace('.npy', '_backup.npy'), np.load(LAMBDA_PATH))
                 np.save(LAMBDA_PATH, avg_lambda)
@@ -349,3 +322,7 @@ if __name__ == '__main__':
             print(f"Error saving lambda: {e}")
 
     print('Done.')
+
+
+if __name__ == "__main__":
+    main()
