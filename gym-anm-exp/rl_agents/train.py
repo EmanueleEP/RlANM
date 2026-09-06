@@ -334,11 +334,9 @@ def main():
     # Load previous evaluation data if resuming
     old_data = None
     if continuing_training and os.path.exists(eval_file):
-        try:
-            old_data = np.load(eval_file)
-            print(f"Loaded {len(old_data['timesteps'])} previous evaluation checkpoints.")
-        except Exception as e:
-            print(f"WARNING: Could not load evaluations.npz: {e}")
+        with np.load(eval_file) as archive:
+            old_data = {key: archive[key] for key in archive.files}
+        print(f"Loaded {len(old_data['timesteps'])} previous evaluation checkpoints.")
 
     # Callbacks
     eval_callback = EvalCallback(
@@ -352,11 +350,7 @@ def main():
         verbose=True,
     )
     if old_data is not None:
-        eval_callback.evaluations_timesteps = list(old_data["timesteps"])
-        eval_callback.evaluations_results = list(old_data["results"])
-        eval_callback.evaluations_length = list(old_data["ep_lengths"])
-        if "discounted_results" in old_data:
-            eval_callback.evaluation_discounted_results = list(old_data["discounted_results"])
+        eval_callback.restore_evaluations(old_data)
 
     callbacks = [eval_callback]
 

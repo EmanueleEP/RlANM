@@ -133,19 +133,11 @@ if __name__ == '__main__':
     # Load existing evaluation data
     eval_file = os.path.join(LOG_DIR, 'evaluations.npz')
     old_data = None
-    old_discounted = None
-    old_timesteps = []
-    old_results = []
-    old_ep_lengths = []
     if os.path.exists(eval_file):
         print("Loading existing evaluation data...")
-        old_data = np.load(eval_file)
-        old_timesteps = list(old_data['timesteps'])
-        old_results = list(old_data['results'])
-        old_ep_lengths = list(old_data['ep_lengths'])
-        if 'discounted_results' in old_data:
-            old_discounted = list(old_data['discounted_results'])
-        print(f"Loaded {len(old_timesteps)} checkpoints, last at timestep {old_timesteps[-1]}")
+        with np.load(eval_file) as archive:
+            old_data = {key: archive[key] for key in archive.files}
+        print(f"Loaded {len(old_data['timesteps'])} evaluation checkpoints.")
 
     # Set seed
     set_random_seed(SEED)
@@ -290,11 +282,7 @@ if __name__ == '__main__':
 
     # Load old data into the callback
     if old_data is not None:
-        eval_callback.evaluations_timesteps = old_timesteps
-        eval_callback.evaluations_results = old_results
-        eval_callback.evaluations_length = old_ep_lengths
-        if old_discounted is not None:
-            eval_callback.evaluation_discounted_results = old_discounted
+        eval_callback.restore_evaluations(old_data)
 
     callbacks = [eval_callback]
 
@@ -325,7 +313,7 @@ if __name__ == '__main__':
     with ProgressBarManager(total_timesteps, initial=current_timesteps) as pbar_callback:
         callbacks.append(pbar_callback)
         model.learn(
-            total_timesteps=total_timesteps,
+            total_timesteps=additional_steps,
             tb_log_name=TB_LOG_NAME,
             callback=callbacks,
             reset_num_timesteps=False,

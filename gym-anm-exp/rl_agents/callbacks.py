@@ -90,6 +90,67 @@ class EvalCallback(EventCallback):
         self.evaluations_branch_overload_mva = []
         self.evaluations_branch_loading_pct = []
 
+    def restore_evaluations(self, data) -> None:
+        """Restore scores and aligned history from an evaluations.npz archive.
+
+        Missing legacy metrics are unknown (NaN), not zero violations.
+        Inconsistent existing arrays are rejected rather than guessing which
+        checkpoints their rows belong to.
+        """
+        timesteps = np.asarray(data["timesteps"])
+        if timesteps.ndim != 1:
+            raise ValueError("Evaluation timesteps must be a one-dimensional array.")
+
+        fields = {
+            "results": "evaluations_results",
+            "ep_lengths": "evaluations_length",
+            "discounted_results": "evaluation_discounted_results",
+            "constraint_any_steps": "evaluations_constraint_any",
+            "constraint_v_steps": "evaluations_constraint_v",
+            "constraint_p_steps": "evaluations_constraint_p",
+            "constraint_q_steps": "evaluations_constraint_q",
+            "branch_overload_steps": "evaluations_constraint_branch_overload",
+            "pfe_nonconverged_steps": "evaluations_pfe_nonconverged",
+            "branch_overload_mva": "evaluations_branch_overload_mva",
+            "branch_loading_pct": "evaluations_branch_loading_pct",
+        }
+        restored = {}
+        missing = []
+        for key, attribute in fields.items():
+            if key not in data:
+                if key in ("results", "ep_lengths"):
+                    raise ValueError(f"Evaluation history is missing required field {key!r}.")
+                missing.append(key)
+                rows = [np.full(self.n_eval_episodes, np.nan) for _ in timesteps]
+            else:
+                values = np.asarray(data[key])
+                if values.ndim == 0 or len(values) != len(timesteps):
+                    raise ValueError(f"Evaluation field {key!r} is not aligned with timesteps.")
+                rows = [np.asarray(row, dtype=float).reshape(-1).copy() for row in values]
+                if any(len(row) != self.n_eval_episodes for row in rows):
+                    raise ValueError(
+                        f"Evaluation field {key!r} does not match "
+                        f"n_eval_episodes={self.n_eval_episodes}. "
+                        "Resume with the original evaluation episode count."
+                    )
+            restored[attribute] = rows
+
+        scores = np.array([np.mean(row) for row in restored["evaluations_results"]])
+        if not np.all(np.isfinite(scores)):
+            raise ValueError("Cannot restore the best score from non-finite evaluation rewards.")
+
+        # Commit only after validating the complete archive.
+        self.evaluations_timesteps = list(timesteps)
+        for attribute, rows in restored.items():
+            setattr(self, attribute, rows)
+        self.best_mean_reward = float(np.max(scores)) if scores.size else -np.inf
+        self.last_mean_reward = float(scores[-1]) if scores.size else -np.inf
+        if missing and len(timesteps):
+            warnings.warn(
+                "Missing historical evaluation metrics filled with NaN: " + ", ".join(missing),
+                stacklevel=2,
+            )
+
     def _init_callback(self) -> None:
         if not isinstance(self.training_env, type(self.eval_env)):
             warnings.warn(
