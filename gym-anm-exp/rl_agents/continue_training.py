@@ -292,6 +292,13 @@ def main(args=None):
             reset_num_timesteps=False,
         )
 
+    final_model_path = os.path.join(LOG_DIR, "final_model")
+    final_env_path = os.path.join(LOG_DIR, "final_vec_env")
+    model.save(final_model_path)
+    train_env.save(final_env_path)
+    print(f"Final model saved to: {final_model_path}.zip")
+    print(f"Final VecNormalize state saved to: {final_env_path}")
+
     # Save final lambda
     if cfg.USE_LAGRANGIAN:
         try:

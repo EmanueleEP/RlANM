@@ -69,6 +69,34 @@ where `<ALGO>` can be either `SAC` or `PPO` and `<SEED>` is an optional random s
 Results will be saved in a new directory `<BASE_DIR>/<ENV_ID>/run_i/` where `i` is replaced by an integer
 so as to create a new directory.
 
+For reproducible experiments, an exact output directory and lighter evaluation
+settings can be supplied from the command line:
+```
+$ python -m rl_agents.train PPO --seed 1 \
+    --run-dir results/experiment_01/lagrangian/seed_1 \
+    --lagrangian --eval-freq 200000 --eval-episodes 3
+```
+The output directory must not already exist. At completion, the run contains both
+the best validation checkpoint (`best_model.zip`) and the last training state
+(`final_model.zip` and `final_vec_env`).
+
+#### Five-seed comparison with Slurm
+The `train_compare_array.slurm` job array runs the same five seeds for the
+Lagrangian and standard configurations (10 independent jobs). At most two jobs
+run concurrently by default. Submit it from this directory with:
+```
+$ mkdir -p slurm_logs
+$ sbatch train_compare_array.slurm
+```
+Use a new experiment identifier when launching another batch, because existing
+run directories are deliberately not reused:
+```
+$ sbatch --export=ALL,EXPERIMENT_ID=experiment_02 train_compare_array.slurm
+```
+`TRAIN_STEPS`, `EVAL_FREQ`, and `EVAL_EPISODES` can be overridden in the same
+way. Adjust the array concurrency suffix `%2` only after checking actual CPU and
+memory usage on the cluster.
+
 #### Inspecting training status
 You can get an overview of the training status of your agents by running:
 ```

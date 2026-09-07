@@ -66,7 +66,15 @@ from .hyperparameters import (
 )
 
 from .callbacks import ProgressBarManager, EvalCallback
-from .utils import save_hyperparameters, parse_args, make_log_dirs, make_env_with_profile_seed, get_training_config, make_monitor_session
+from .utils import (
+    save_hyperparameters,
+    parse_args,
+    make_log_dirs,
+    make_explicit_log_dir,
+    make_env_with_profile_seed,
+    get_training_config,
+    make_monitor_session,
+)
 from .wrappers import (
     LagrangianWrapper,
     StandardPenaltyWrapper,
@@ -213,6 +221,11 @@ def main():
     if args.steps is not None:
         print(f"TRAIN_STEPS overridden to: {train_steps}")
 
+    eval_freq = args.eval_freq if args.eval_freq is not None else EVAL_FREQ
+    n_eval_episodes = (
+        args.eval_episodes if args.eval_episodes is not None else N_EVAL_EPISODES
+    )
+
     # Override Lagrangian flag from CLI 
     use_lagrangian = args.lagrangian if args.lagrangian is not None else USE_LAGRANGIAN
     if args.lagrangian is not None:
@@ -226,7 +239,10 @@ def main():
         print("BCP‑REWARD mode: energy‑only base + fixed penalty weights (no adaptive lambdas)")
 
     # Create log directories 
-    run_log_dir, tensorboard_log = make_log_dirs(_BASE_LOG_DIR)
+    if args.run_dir is not None:
+        run_log_dir, tensorboard_log = make_explicit_log_dir(args.run_dir)
+    else:
+        run_log_dir, tensorboard_log = make_log_dirs(_BASE_LOG_DIR)
     print(f"Log directory: {run_log_dir}")
 
     # Load previous lambda if resuming 
@@ -257,8 +273,8 @@ def main():
             "LOG_DIR": run_log_dir,
             "TRAIN_STEPS": train_steps,
             "MAX_TRAINING_EP_LENGTH": MAX_TRAINING_EP_LENGTH,
-            "EVAL_FREQ": EVAL_FREQ,
-            "N_EVAL_EPISODES": N_EVAL_EPISODES,
+            "EVAL_FREQ": eval_freq,
+            "N_EVAL_EPISODES": n_eval_episodes,
             "TENSORBOARD_LOG": tensorboard_log,
             "TB_LOG_NAME": TB_LOG_NAME,
             "POLICY": POLICY,
@@ -348,10 +364,10 @@ def main():
         eval_env,
         best_model_save_path=run_log_dir,
         log_path=run_log_dir,
-        eval_freq=EVAL_FREQ,
+        eval_freq=eval_freq,
         deterministic=True,
         render=False,
-        n_eval_episodes=N_EVAL_EPISODES,
+        n_eval_episodes=n_eval_episodes,
         verbose=True,
     )
     if old_data is not None:
@@ -429,6 +445,13 @@ def main():
             reset_num_timesteps=not continuing_training,
         )
     print("Training completed.")
+
+    final_model_path = os.path.join(run_log_dir, "final_model")
+    final_env_path = os.path.join(run_log_dir, "final_vec_env")
+    model.save(final_model_path)
+    train_env.save(final_env_path)
+    print(f"Final model saved to: {final_model_path}.zip")
+    print(f"Final VecNormalize state saved to: {final_env_path}")
 
     # Save final lambda (if Lagrangian)
     if use_lagrangian:

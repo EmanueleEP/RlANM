@@ -81,7 +81,10 @@ def resolve_resume_config(args):
     if config["ALGO"] != args.agent:
         raise ValueError(f"Saved run uses {config['ALGO']}, but {args.agent} was requested.")
     for argument, key in (("seed", "SEED"), ("steps", "TRAIN_STEPS"),
-                          ("lagrangian", "USE_LAGRANGIAN"), ("bcp_reward", "USE_BCP_REWARD")):
+                          ("eval_freq", "EVAL_FREQ"),
+                          ("eval_episodes", "N_EVAL_EPISODES"),
+                          ("lagrangian", "USE_LAGRANGIAN"),
+                          ("bcp_reward", "USE_BCP_REWARD")):
         value = getattr(args, argument)
         if value is not None:
             config[key] = value
@@ -91,18 +94,41 @@ def resolve_resume_config(args):
 
 
 def make_log_dirs(log_dir):
-    """Create new subdirectories in `log_dir` for this run."""
-    i = 0
-    while os.path.isdir(os.path.join(log_dir, f'run_{i}')):
-        i += 1
-    log_dir = os.path.join(log_dir, f'run_{i}')
+    """Atomically reserve a numbered run directory inside `log_dir`."""
     os.makedirs(log_dir, exist_ok=True)
+    i = 0
+    while True:
+        run_dir = os.path.join(log_dir, f'run_{i}')
+        try:
+            os.mkdir(run_dir)
+        except FileExistsError:
+            i += 1
+        else:
+            break
 
-    # Make tensorboard log directory within `log_dir`.
-    tensorboard_log = os.path.join(log_dir, 'tensorboard')
-    os.makedirs(tensorboard_log, exist_ok=True)
+    tensorboard_log = os.path.join(run_dir, 'tensorboard')
+    os.mkdir(tensorboard_log)
 
-    return log_dir, tensorboard_log
+    return run_dir, tensorboard_log
+
+
+def make_explicit_log_dir(run_dir):
+    """Atomically reserve an explicit run directory, refusing to reuse it."""
+    run_dir = os.path.abspath(os.path.expanduser(run_dir))
+    parent = os.path.dirname(run_dir)
+    os.makedirs(parent, exist_ok=True)
+    try:
+        os.mkdir(run_dir)
+    except FileExistsError as error:
+        raise FileExistsError(
+            f"Run directory already exists: {run_dir}. "
+            "Choose a new --run-dir to avoid mixing experiment outputs."
+        ) from error
+
+    tensorboard_log = os.path.join(run_dir, 'tensorboard')
+    os.mkdir(tensorboard_log)
+
+    return run_dir, tensorboard_log
 
 
 def make_monitor_session(run_dir):
@@ -166,20 +192,40 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("agent", type=str, help="Agent to train")
-    parser.add_argument("--path", '-p', type=str, default=None, help='The path to the run to continue')
+    run_group = parser.add_mutually_exclusive_group()
+    run_group.add_argument(
+        "--path", '-p', type=str, default=None,
+        help='The path to the run to continue',
+    )
+    run_group.add_argument(
+        "--run-dir", type=str, default=None,
+        help='Exact output directory for a new run; it must not already exist.',
+    )
     parser.add_argument("--seed", '-s', type=int, default=None,
                         help='Random seed (default: saved run seed when resuming, otherwise 1)')
     parser.add_argument(
         "--steps",
-        type=int,
+        type=_positive_int,
         default=None,
         help="Override TRAIN_STEPS for quick runs/debugging (default: use hyperparameters.py).",
     )
     parser.add_argument(
         "--step-log-every",
-        type=int,
+        type=_positive_int,
         default=1000,
         help="Write one JSONL log row every N timesteps (also logs on episode end).",
+    )
+    parser.add_argument(
+        "--eval-freq",
+        type=_positive_int,
+        default=None,
+        help="Override the number of training timesteps between evaluations.",
+    )
+    parser.add_argument(
+        "--eval-episodes",
+        type=_positive_int,
+        default=None,
+        help="Override the number of episodes per evaluation.",
     )
     parser.add_argument(
         "--disable-step-log",
@@ -204,6 +250,14 @@ def parse_args():
 
     args = parser.parse_args()
     return args
+
+
+def _positive_int(value):
+    """Argparse type accepting strictly positive integers."""
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 
 def make_env_with_profile_seed(env_id: str, profile_seed: int = None,
