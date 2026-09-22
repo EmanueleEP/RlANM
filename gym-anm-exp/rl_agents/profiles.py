@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import csv
 import importlib
+import warnings
 from pathlib import Path
 from types import MethodType
 from typing import Mapping
@@ -190,9 +191,33 @@ def load_profile_bank(env, *, profile_file=None, profile_provider=None,
     return ProfileBank(loads, generation, load_ids, gen_ids, source)
 
 
+def _time_of_day_steps(base):
+    """Steps per day if the env's only auxiliary variable is the time of day, else None.
+
+    This is the ANM6Easy convention (also used by the custom ANM6 and BCP envs):
+    K = 1 and aux_bounds = [[0, 24 / delta_t - 1]].
+    """
+    bounds = getattr(base, "aux_bounds", None)
+    if getattr(base, "K", None) != 1 or bounds is None:
+        return None
+    steps = 24.0 / float(base.delta_t)
+    if not steps.is_integer():
+        return None
+    bounds = np.asarray(bounds, dtype=float)
+    if bounds.shape != (1, 2) or bounds[0, 0] != 0 or bounds[0, 1] != steps - 1:
+        return None
+    return int(steps)
+
+
 def apply_external_profiles(env, *, profile_file=None, profile_provider=None,
                             split="train", seed=None):
-    """Install a profile bank on any compatible Gym-ANM environment instance."""
+    """Install a profile bank on any compatible Gym-ANM environment instance.
+
+    Row 0 of every scenario is taken as 00:00 and consecutive rows are one
+    environment timestep apart. When the environment's auxiliary variable is
+    the time of day, it is set from the profile position so that the agent
+    observes the time that matches the injected loads and generation.
+    """
     if profile_file is None and profile_provider is None:
         return env
     bank = load_profile_bank(
@@ -203,6 +228,21 @@ def apply_external_profiles(env, *, profile_file=None, profile_provider=None,
     original_init_state = base.init_state
     original_next_vars = base.next_vars
     rng = np.random.default_rng(seed) if seed is not None else None
+    steps_per_day = _time_of_day_steps(base)
+    n_timesteps = bank.load_p_mw.shape[1]
+    if steps_per_day is None:
+        warnings.warn(
+            f"{type(base).__name__}: the auxiliary variable is not a time-of-day index, "
+            "so it keeps following the environment's own clock and is not aligned "
+            "with the external profiles.",
+            stacklevel=2,
+        )
+    elif n_timesteps % steps_per_day:
+        warnings.warn(
+            f"Profile scenarios have {n_timesteps} timesteps, not a multiple of "
+            f"{steps_per_day} per day: the time of day jumps when a scenario wraps around.",
+            stacklevel=2,
+        )
 
     def choose_index(self):
         random = rng if rng is not None else self.np_random
@@ -226,6 +266,8 @@ def apply_external_profiles(env, *, profile_file=None, profile_provider=None,
         for index, (dev_id, value) in enumerate(zip(bank.gen_device_ids, bank.gen_p_max_mw[scenario, timestep])):
             state[dev_id] = value
             state[potential_offset + index] = value
+        if steps_per_day is not None:
+            state[-1] = timestep % steps_per_day
         return state
 
     def next_vars(self, state):
@@ -233,7 +275,9 @@ def apply_external_profiles(env, *, profile_file=None, profile_provider=None,
         scenario, timestep = self._external_profile_position
         timestep = (timestep + 1) % bank.load_p_mw.shape[1]
         self._external_profile_position[1] = timestep
-        aux = original[self.simulator.N_load + self.simulator.N_non_slack_gen:]
+        aux = original[self.simulator.N_load + self.simulator.N_non_slack_gen:].copy()
+        if steps_per_day is not None:
+            aux[0] = timestep % steps_per_day
         return np.concatenate((bank.load_p_mw[scenario, timestep],
                                bank.gen_p_max_mw[scenario, timestep], aux))
 

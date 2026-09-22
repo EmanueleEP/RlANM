@@ -131,6 +131,14 @@ weekday,1,-2.0,-1.7,-2.3,0.1,1.3
 ```
 Rows within each scenario are read in file order; `step` is descriptive.
 
+In every format, row 0 of a scenario is interpreted as 00:00 and consecutive
+rows must be one environment timestep apart (15 minutes for the ANM6 and BCP
+environments). When the environment's auxiliary variable is the time of day,
+as in ANM6Easy, it is set from the profile position, so the observed time
+matches the injected loads and generation. Scenario lengths should be whole
+days; otherwise a warning is raised because the time of day jumps when an
+episode wraps around the end of a scenario.
+
 For a database, API, or another custom source, expose a Python callable:
 ```python
 def load_profiles(*, env, split, seed):
