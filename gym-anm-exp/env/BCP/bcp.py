@@ -8,7 +8,12 @@ from gym_anm import ANMEnv
 from .rendering.py import rendering
 from .network import network as network_default
 from .utils import random_date
-from .fix_reward import build_constraint_costs
+from ..constraints import (
+    build_constraint_costs,
+    default_env_params,
+    reactive_usage_fraction,
+    validate_env_params,
+)
 
 
 class BCP_base(ANMEnv):
@@ -31,6 +36,8 @@ class BCP_base(ANMEnv):
         # They are still logged via constraint/branch_overload_pu_max and can still be
         # penalized in the objective (see W_BRANCH_OVERLOAD below).
         self.include_branch_overload_in_constraints = True
+        # Reward/constraint parameters, defaults from rl_agents/hyperparameters.py.
+        self.env_params = default_env_params()
         self.network_specs = self.simulator.get_rendering_specs()
         self.timestep_length = dt.timedelta(minutes=int(60 * delta_t))
         self.date = None
@@ -39,6 +46,10 @@ class BCP_base(ANMEnv):
         self.skipped_frames = None
         self.render_mode = None
         self.is_rendering = False
+
+    def configure(self, **params):
+        """Override reward/constraint parameters (keys from env.constraints.ENV_PARAM_KEYS)."""
+        self.env_params.update(validate_env_params(params))
 
     def render(self, mode="human", skip_frames=0):
         if self.render_mode is None:
@@ -127,6 +138,7 @@ class BCP_base(ANMEnv):
         v_violation = np.maximum(0, bus_v - v_max) + np.maximum(0, v_min - bus_v)
 
         delta_t_h = float(getattr(self, "delta_t", 0.25))
+        params = self.env_params
 
         branch_s_dict = full_state.get("branch_s", {}).get("MVA", {})
         branch_ids = sorted(self.simulator.branches.keys())
@@ -143,7 +155,7 @@ class BCP_base(ANMEnv):
 
             branch_overload_mva_max = max(branch_overload_mva_max, overload_mva)
             branch_overload_mvah += overload_mva * delta_t_h
-            branch_soft_penalty_mvah += max(0.0, s_mva - 0.8 * s_max) * delta_t_h
+            branch_soft_penalty_mvah += max(0.0, s_mva - params["BRANCH_SOFT_LOADING"] * s_max) * delta_t_h
             branch_loading[br_id] = s_mva / max(s_max, 1e-6)
 
         # Constraint costs (used by LagrangianWrapper)
@@ -169,12 +181,16 @@ class BCP_base(ANMEnv):
             v_violation_pu_max=v_violation_pu_max,
             combined_p_constraint_pu=combined_p_constraint,
             q_violation_pu_max=q_violation_pu_max,
+            v_tol=params["V_TOL"],
+            p_tol=params["P_TOL"],
+            q_tol=params["Q_TOL"],
         )
 
         if getattr(self, "use_lagrangian_reward", False):
-            Q_TOL_MAGNITUDE = 0.1
-            q_magnitude_pu = float(total_q_mvar / base_mva) if base_mva else 0.0
-            info["constraint_costs"][2] = q_magnitude_pu / Q_TOL_MAGNITUDE
+            # Fraction of the controllable reactive capability in use, compared with Q_LIMIT.
+            info["constraint_costs"][2] = reactive_usage_fraction(
+                device_data, controllable_q_ids, dev_q_dict, base_mva
+            )
         info["constraint/v_violation_pu_max"] = v_violation_pu_max
         info["constraint/p_violation_pu_max"] = p_violation_pu_max
         info["constraint/q_violation_pu_max"] = q_violation_pu_max
@@ -199,11 +215,11 @@ class BCP_base(ANMEnv):
         # Battery state
         battery_soc_mwh = float(full_state.get("des_soc", {}).get("MWh", {}).get(3, 0.0))
 
-        # SoC management — boundary penalty (soft walls at 20% and 80%)
+        # SoC management — boundary penalty (soft walls at BCP_SOC_LOW / BCP_SOC_HIGH)
         soc_max_mwh = float(self.simulator.devices[3].soc_max) * float(self.simulator.baseMVA)
         soc_fraction = battery_soc_mwh / max(soc_max_mwh, 1e-8)
-        SOC_LOW = 0.2
-        SOC_HIGH = 0.8
+        SOC_LOW = params["BCP_SOC_LOW"]
+        SOC_HIGH = params["BCP_SOC_HIGH"]
         if soc_fraction < SOC_LOW:
             soc_boundary_cost = ((SOC_LOW - soc_fraction) / SOC_LOW) ** 2 * delta_t_h
         elif soc_fraction > SOC_HIGH:
@@ -211,12 +227,10 @@ class BCP_base(ANMEnv):
         else:
             soc_boundary_cost = 0.0
 
-        W_CURTAIL       = 1.0   # per MWh curtailed
-        W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
-        W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
-        W_SOC_BOUNDARY  = 30.0  # quadratic penalty near soc boundaries ( < 15% or > 95%)
-        W_Q_MAGNITUDE   = 0.5   # per MVArh of unnecessary reactive power
-        W_BRANCH_SOFT   = 1.0   # (= S, apparent power) per MVAh above 80% (soft congestion signal)
+        W_CURTAIL       = params["W_CURTAIL"]
+        W_SLACK_IMPORT  = params["W_SLACK_IMPORT"]
+        W_SLACK_EXPORT  = params["W_SLACK_EXPORT"]
+        W_SOC_BOUNDARY  = params["W_SOC_BOUNDARY"]
 
         curtailment_mwh   = curtailment_mw   * delta_t_h
         slack_import_mwh  = slack_import_mw  * delta_t_h

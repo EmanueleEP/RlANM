@@ -24,7 +24,6 @@ from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 
 from .hyperparameters import (
-    ENV_ID,
     GAMMA,
     POLICY,
     EVAL_FREQ,
@@ -32,13 +31,13 @@ from .hyperparameters import (
     MAX_TRAINING_EP_LENGTH,
     MAX_EVAL_EP_LENGTH,
     TB_LOG_NAME,
-    USE_LAGRANGIAN,
     N_ENVS,
     STANDARD_PENALTY_W_V,
     STANDARD_PENALTY_W_P,
     STANDARD_PENALTY_W_Q,
-    INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
-    LOG_DIR as _BASE_LOG_DIR,
+    BATTERY_CLIP_PENALTY,
+    PPO_ENT_COEF,
+    BASE_DIR,
     TRAIN_STEPS as _DEFAULT_TRAIN_STEPS,
     V_TOLERANCE,
     PQ_LIMIT,
@@ -62,7 +61,9 @@ from .hyperparameters import (
     PFE_TERMINATE_PENALTY,
     PFE_LAMBDA_STEPS,
     LAMBDA_MAX,
-    USE_BCP_REWARD as _USE_BCP_REWARD,
+    LAMBDA_INIT_V,
+    LAMBDA_INIT_P,
+    LAMBDA_INIT_Q,
 )
 
 from .callbacks import ProgressBarManager, EvalCallback
@@ -73,7 +74,10 @@ from .utils import (
     make_explicit_log_dir,
     make_env_with_profile_seed,
     get_training_config,
+    configure_env,
     make_monitor_session,
+    validate_training_method,
+    resolve_new_training_method,
 )
 from .wrappers import (
     LagrangianWrapper,
@@ -116,11 +120,16 @@ def _make_train_env_factory(
     w_p,
     w_q,
     n_envs,
-    include_branch_overload,
+    env_config,
+    battery_clip_penalty,
     forecast_horizon,
     pfe_penalty,
     pfe_lambda_steps,
     peak_weight,
+    lambda_max,
+    profile_file=None,
+    profile_provider=None,
+    profile_split="train",
 ):
     """
     Factory that creates a training environment for each parallel rank.
@@ -128,15 +137,19 @@ def _make_train_env_factory(
     """
     def make_env(rank: int):
         def _init():
-            env = gym.make(env_id)
-            if hasattr(env, "include_branch_overload_in_constraints"):
-                env.include_branch_overload_in_constraints = bool(include_branch_overload)
+            env = make_env_with_profile_seed(
+                env_id,
+                profile_seed=seed + rank,
+                profile_file=profile_file,
+                profile_provider=profile_provider,
+                profile_split=profile_split,
+            )
             # BCP energy‑only base reward: used by both Lagrangian and BCP‑standard paths.
-            env.unwrapped.use_lagrangian_reward = bool(use_lagrangian or use_bcp_reward)
+            configure_env(env, env_config, use_lagrangian_reward=use_lagrangian or use_bcp_reward)
 
             env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
             env = NormalizeActionWrapper(env)
-            env = BatteryClipWrapper(env)
+            env = BatteryClipWrapper(env, clip_penalty_weight=battery_clip_penalty)
 
             if forecast_horizon and forecast_horizon > 0:
                 env = ForecastObsWrapper(env, horizon_steps=forecast_horizon)
@@ -152,11 +165,13 @@ def _make_train_env_factory(
                     lambda_init=lambda_init,
                     n_envs=n_envs,
                     peak_weight=peak_weight,
+                    lambda_max=lambda_max,
                 )
             elif use_bcp_reward:
                 # BCP energy‑only base + fixed penalty weights (no adaptive dual variables)
                 env = StandardPenaltyWrapper(env, w_v=w_v, w_p=w_p, w_q=w_q)
-            # ANM6Easy path: no extra wrapper → original reward unchanged.
+            # original/custom: no penalty wrapper, but BatteryClipWrapper and
+            # PFETerminateWrapper still add their penalties to the native reward.
 
             env = PFETerminateWrapper(
                 env,
@@ -175,18 +190,26 @@ def _make_eval_env_factory(
     monitor_dir,
     seed,
     max_ep_length,
-    include_branch_overload,
+    env_config,
     forecast_horizon,
     pfe_penalty,
     eval_profile_seed: int = 456,
+    profile_file=None,
+    profile_provider=None,
+    profile_split="validation",
 ):
     """Factory for evaluation environments – uses a different profile seed."""
     def make_env(rank: int):
         def _init():
             # Use the helper to create the environment
-            env = make_env_with_profile_seed(env_id, profile_seed=eval_profile_seed)
-            if hasattr(env, "include_branch_overload_in_constraints"):
-                env.include_branch_overload_in_constraints = bool(include_branch_overload)
+            env = make_env_with_profile_seed(
+                env_id,
+                profile_seed=eval_profile_seed,
+                profile_file=profile_file,
+                profile_provider=profile_provider,
+                profile_split=profile_split,
+            )
+            configure_env(env, env_config)
             env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env, clip_penalty_weight=0.0)
@@ -215,6 +238,8 @@ def main():
         raise ValueError(f"Agent not supported: {args.agent}")
 
     SEED = args.seed if args.seed is not None else 1
+    method, env_id, use_lagrangian, use_bcp_reward = resolve_new_training_method(args)
+    print(f"Training method: {method} (ENV_ID={env_id})")
 
     # Override steps from CLI 
     train_steps = int(args.steps) if args.steps is not None else _DEFAULT_TRAIN_STEPS
@@ -225,24 +250,33 @@ def main():
     n_eval_episodes = (
         args.eval_episodes if args.eval_episodes is not None else N_EVAL_EPISODES
     )
+    profile_file = (
+        os.path.abspath(os.path.expanduser(args.profile_file))
+        if args.profile_file is not None else None
+    )
+    profile_provider = args.profile_provider
+    profile_split = args.profile_split or "train"
+    if args.eval_profile_file is not None or args.eval_profile_provider is not None:
+        eval_profile_file = (
+            os.path.abspath(os.path.expanduser(args.eval_profile_file))
+            if args.eval_profile_file is not None else None
+        )
+        eval_profile_provider = args.eval_profile_provider
+    else:
+        eval_profile_file = profile_file
+        eval_profile_provider = profile_provider
+    eval_profile_split = args.eval_profile_split or "validation"
 
-    # Override Lagrangian flag from CLI 
-    use_lagrangian = args.lagrangian if args.lagrangian is not None else USE_LAGRANGIAN
-    if args.lagrangian is not None:
-        print(f"USE_LAGRANGIAN overridden to: {use_lagrangian}")
-
-    # BCP‑reward mode (energy‑only base reward) 
-    use_bcp_reward = args.bcp_reward if args.bcp_reward is not None else _USE_BCP_REWARD
-    if use_lagrangian:
-        use_bcp_reward = False  # Lagrangian mode takes precedence
     if use_bcp_reward:
         print("BCP‑REWARD mode: energy‑only base + fixed penalty weights (no adaptive lambdas)")
+
+    validate_training_method(env_id, use_lagrangian, use_bcp_reward)
 
     # Create log directories 
     if args.run_dir is not None:
         run_log_dir, tensorboard_log = make_explicit_log_dir(args.run_dir)
     else:
-        run_log_dir, tensorboard_log = make_log_dirs(_BASE_LOG_DIR)
+        run_log_dir, tensorboard_log = make_log_dirs(os.path.join(BASE_DIR, env_id))
     print(f"Log directory: {run_log_dir}")
 
     # Load previous lambda if resuming 
@@ -252,7 +286,7 @@ def main():
     lambda_path = os.path.join(run_log_dir, "lambda_state.npy")
     continuing_training = os.path.exists(agent_path)
 
-    lambda_init_value = np.array([0.5, 3.5, 0.5], dtype=np.float32)
+    lambda_init_value = np.array([LAMBDA_INIT_V, LAMBDA_INIT_P, LAMBDA_INIT_Q], dtype=np.float32)
     if use_lagrangian and continuing_training and os.path.exists(lambda_path):
         try:
             loaded = np.load(lambda_path).astype(np.float32)
@@ -268,8 +302,9 @@ def main():
     if not continuing_training:
         save_hyperparameters(run_log_dir, {
             **get_training_config(),
+            "METHOD": method,
             "SEED": SEED,
-            "ENV_ID": ENV_ID,
+            "ENV_ID": env_id,
             "LOG_DIR": run_log_dir,
             "TRAIN_STEPS": train_steps,
             "MAX_TRAINING_EP_LENGTH": MAX_TRAINING_EP_LENGTH,
@@ -283,6 +318,12 @@ def main():
             "MAX_EVAL_EP_LENGTH": MAX_EVAL_EP_LENGTH,
             "USE_LAGRANGIAN": use_lagrangian,
             "USE_BCP_REWARD": use_bcp_reward,
+            "PROFILE_FILE": profile_file,
+            "PROFILE_PROVIDER": profile_provider,
+            "PROFILE_SPLIT": profile_split,
+            "EVAL_PROFILE_FILE": eval_profile_file,
+            "EVAL_PROFILE_PROVIDER": eval_profile_provider,
+            "EVAL_PROFILE_SPLIT": eval_profile_split,
             "PEAK_WEIGHT": PEAK_WEIGHT,
             "LAMBDA_LR": LAMBDA_LR,
             "Q_LIMIT": Q_LIMIT,
@@ -296,8 +337,9 @@ def main():
 
     # Build environment factories 
     monitor_dir = make_monitor_session(run_log_dir)
+    env_config = get_training_config()
     train_factory = _make_train_env_factory(
-        env_id=ENV_ID,
+        env_id=env_id,
         monitor_dir=monitor_dir,
         seed=SEED,
         max_ep_length=MAX_TRAINING_EP_LENGTH,
@@ -312,20 +354,28 @@ def main():
         w_p=STANDARD_PENALTY_W_P,
         w_q=STANDARD_PENALTY_W_Q,
         n_envs=N_ENVS,
-        include_branch_overload=INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
+        env_config=env_config,
+        battery_clip_penalty=BATTERY_CLIP_PENALTY,
         forecast_horizon=FORECAST_HORIZON_STEPS,
         pfe_penalty=PFE_TERMINATE_PENALTY,
         pfe_lambda_steps=PFE_LAMBDA_STEPS if use_lagrangian else 0.0,
         peak_weight=PEAK_WEIGHT,
+        lambda_max=LAMBDA_MAX,
+        profile_file=profile_file,
+        profile_provider=profile_provider,
+        profile_split=profile_split,
     )
     eval_factory = _make_eval_env_factory(
-        env_id=ENV_ID,
+        env_id=env_id,
         monitor_dir=monitor_dir,
         seed=SEED,
         max_ep_length=MAX_EVAL_EP_LENGTH,
-        include_branch_overload=INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
+        env_config=env_config,
         forecast_horizon=FORECAST_HORIZON_STEPS,
         pfe_penalty=PFE_TERMINATE_PENALTY,
+        profile_file=eval_profile_file,
+        profile_provider=eval_profile_provider,
+        profile_split=eval_profile_split,
     )
 
     print("Creating environments...")
@@ -420,7 +470,7 @@ def main():
                 learning_rate=_linear_schedule(PPO_LR_INITIAL, PPO_LR_FINAL),
                 clip_range=_linear_schedule(PPO_CLIP_INITIAL, PPO_CLIP_FINAL),
                 target_kl=PPO_TARGET_KL,
-                ent_coef=0.01,
+                ent_coef=PPO_ENT_COEF,
             )
         else:  # SAC
             model = SAC(

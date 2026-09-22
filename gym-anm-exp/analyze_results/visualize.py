@@ -21,10 +21,7 @@ from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from rl_agents.hyperparameters import (
-    ENV_ID, MAX_EVAL_EP_LENGTH, USE_LAGRANGIAN,
-    STANDARD_PENALTY_W_V, STANDARD_PENALTY_W_P, STANDARD_PENALTY_W_Q,
-)
+from rl_agents.hyperparameters import ENV_ID
 from rl_agents.wrappers import (
     LagrangianWrapper, StandardPenaltyWrapper,
     TimeLimitWrapper, NormalizeActionWrapper, BatteryClipWrapper,
@@ -37,6 +34,30 @@ faulthandler.enable()
 import tty, termios
 
 from gym_anm.simulator.components import Generator, StorageUnit
+from rl_agents.utils import (
+    make_env_with_profile_seed,
+    configure_env,
+    get_training_config,
+    load_run_config,
+)
+
+
+def _read_run_hyperparameters(run_path):
+    params = {}
+    hp_path = os.path.join(run_path, "hyperparameters.txt")
+    if not os.path.isfile(hp_path):
+        return params
+    with open(hp_path, encoding="utf-8") as file:
+        for line in file:
+            key, separator, value = line.strip().partition(":")
+            if separator:
+                params[key.strip().strip("'\"")] = value.strip().strip("'\"")
+    return params
+
+
+def _optional_setting(settings, key):
+    value = settings.get(key)
+    return None if value in (None, "", "None") else value
 
 
 def _validate_policy_architecture(model, env):
@@ -363,47 +384,69 @@ def print_step_info(step, action, obs, reward, done, info, anm_env, action_time=
     print(f"\nREWARD: {reward:.4f}")
     print(f"DONE: {done}")
 
-def make_env(env_id, vec_env_path, wrappers=True):
-    """Costruisce l'environment di visualizzazione con gli stessi wrapper del training."""
-    try:
-        from rl_agents.hyperparameters import FORECAST_HORIZON_STEPS
-    except ImportError:
-        FORECAST_HORIZON_STEPS = 0
- 
-    lambda_init = np.array([1.0, 1.0, 1.0], dtype=np.float32)
-    lambda_path = os.path.normpath(os.path.join(vec_env_path, "..", "lambda_state.npy"))
-    if os.path.exists(lambda_path):
-        try:
-            lambda_init = np.load(lambda_path).astype(np.float32)
-            print(f"[make_env] Lambda caricata: {lambda_init}")
-        except Exception as e:
-            warnings.warn(f"[make_env] Impossibile caricare lambda: {e}. Uso defaults.")
-    else:
-        warnings.warn(f"[make_env] lambda_state.npy non trovato in {lambda_path}. Uso defaults.")
- 
-    from rl_agents.hyperparameters import INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS
- 
+def make_env(env_id, vec_env_path, wrappers=True, profile_file=None,
+             profile_provider=None, profile_split="validation", run_config=None):
+    """Costruisce l'environment di visualizzazione con gli stessi wrapper del training.
+
+    La configurazione (metodo, tolleranze, pesi) viene letta da `run_config`,
+    cioè da hyperparameters.txt della run (vedi load_run_config), non dai
+    default correnti.
+    """
+    cfg = run_config if run_config is not None else get_training_config()
+    use_lagrangian = cfg["USE_LAGRANGIAN"]
+    use_bcp_reward = cfg["USE_BCP_REWARD"] and not use_lagrangian
+    forecast_horizon = cfg["FORECAST_HORIZON_STEPS"]
+    max_ep_length = cfg["MAX_EVAL_EP_LENGTH"]
+
+    lambda_init = None
+    if use_lagrangian:
+        lambda_path = os.path.normpath(os.path.join(vec_env_path, "..", "best_lambda_state.npy"))
+        if os.path.exists(lambda_path):
+            try:
+                lambda_init = np.load(lambda_path).astype(np.float32)
+                print(f"[make_env] Lambda caricata: {lambda_init}")
+            except Exception as e:
+                warnings.warn(f"[make_env] Impossibile caricare lambda: {e}. Wrapper Lagrangiano disattivato.")
+        else:
+            warnings.warn(
+                f"[make_env] best_lambda_state.npy non trovato in {lambda_path}. "
+                "Wrapper Lagrangiano disattivato."
+            )
+
     def _init():
-        import gymnasium as gym
-        env = gym.make(env_id)
-        if hasattr(env, "include_branch_overload_in_constraints"):
-            env.include_branch_overload_in_constraints = bool(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
+        env = make_env_with_profile_seed(
+            env_id,
+            profile_seed=456,
+            profile_file=profile_file,
+            profile_provider=profile_provider,
+            profile_split=profile_split,
+        )
+        configure_env(env, cfg, use_lagrangian_reward=use_lagrangian or use_bcp_reward)
         if wrappers:
-            env = TimeLimitWrapper(env, max_episode_steps=MAX_EVAL_EP_LENGTH)
+            env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env, clip_penalty_weight=0.0)
-            if FORECAST_HORIZON_STEPS and FORECAST_HORIZON_STEPS > 0:
-                env = ForecastObsWrapper(env, horizon_steps=FORECAST_HORIZON_STEPS)
-            if USE_LAGRANGIAN:
-                env = LagrangianWrapper(env, lambda_lr=0.0, lambda_init=lambda_init)
-            else:
+            if forecast_horizon and forecast_horizon > 0:
+                env = ForecastObsWrapper(env, horizon_steps=forecast_horizon)
+            if use_lagrangian and lambda_init is not None:
+                env = LagrangianWrapper(
+                    env,
+                    v_tolerance=cfg["V_TOLERANCE"],
+                    pq_limit=cfg["PQ_LIMIT"],
+                    q_limit=cfg["Q_LIMIT"],
+                    lambda_lr=0.0,
+                    lambda_init=lambda_init,
+                    lambda_max=cfg["LAMBDA_MAX"],
+                    peak_weight=cfg["PEAK_WEIGHT"],
+                )
+            elif use_bcp_reward:
                 env = StandardPenaltyWrapper(
                     env,
-                    w_v=STANDARD_PENALTY_W_V,
-                    w_p=STANDARD_PENALTY_W_P,
-                    w_q=STANDARD_PENALTY_W_Q,
+                    w_v=cfg["STANDARD_PENALTY_W_V"],
+                    w_p=cfg["STANDARD_PENALTY_W_P"],
+                    w_q=cfg["STANDARD_PENALTY_W_Q"],
                 )
-            env = PFETerminateWrapper(env, penalty=20.0)
+            env = PFETerminateWrapper(env, penalty=cfg["PFE_TERMINATE_PENALTY"])
         return env
  
     env = DummyVecEnv([_init])
@@ -434,7 +477,20 @@ def visualize(path, algo_class, T, sleep_time, print_steps, no_mean=False, step_
     zip_path     = os.path.join(path, "best_model.zip")
     device       = "cuda" if torch.cuda.is_available() else "cpu"
 
-    env   = make_env(ENV_ID, vec_env_path, wrappers=True)
+    settings = _read_run_hyperparameters(path)
+    env_id = settings.get("ENV_ID", ENV_ID)
+    profile_file = _optional_setting(settings, "EVAL_PROFILE_FILE")
+    profile_provider = _optional_setting(settings, "EVAL_PROFILE_PROVIDER")
+    profile_split = _optional_setting(settings, "EVAL_PROFILE_SPLIT") or "validation"
+    env = make_env(
+        env_id,
+        vec_env_path,
+        wrappers=True,
+        profile_file=profile_file,
+        profile_provider=profile_provider,
+        profile_split=profile_split,
+        run_config=load_run_config(path, get_training_config()),
+    )
     model = _load_model_safe(algo_class, zip_path, env, device)
 
     anm_env = get_anm_env(env)

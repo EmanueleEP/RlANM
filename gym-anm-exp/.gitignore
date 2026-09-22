@@ -110,13 +110,16 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+# (no `env/` or `ENV/` rule: env/ is this project's environment package)
 .env
 .venv
-env/
 venv/
-ENV/
 env.bak/
 venv.bak/
+
+# Local, non-project files inside the env package
+env/ciao/
+env/BCP/rendering/logs/
 
 # Spyder project settings
 .spyderproject

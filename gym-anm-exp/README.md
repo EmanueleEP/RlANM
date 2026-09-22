@@ -49,7 +49,7 @@ planning steps N (optimization horizon) and safety margin hyperparameters &beta;
 ## Running The Code
 
 ### Installation & Requirements
-It is recommended to run the code in this repository on python `3.8` (later versions may work, but haven't been tested).
+Use Python `3.12` or later. The pinned dependencies below match the Gymnasium-based API used by the code.
 The dependencies can be installed with:
 ```
 $ pip install -r requirements.txt
@@ -59,12 +59,98 @@ $ pip install -r requirements.txt
 Before starting training the agents, you may want to modify certain hyperparameters in `rl_agents/hyperparameters.py`.
 In particular, you should specify the folder in which you want the results to be stored `BASE_DIR`.
 
+`hyperparameters.py` is the single place for every tunable value, including the
+custom environments' reward weights (`W_*`), SoC bounds, constraint cost scales
+(`V_TOL`, `P_TOL`, `Q_TOL`) and constraint limits (`V_TOLERANCE` and
+`PQ_LIMIT`, expressed in multiples of those scales; with the Lagrangian or BCP
+reward, `Q_LIMIT` is the allowed fraction of the reactive capability in use).
+All of them are saved in each run's `hyperparameters.txt`; resuming, evaluating
+and visualizing a run reapply the saved values, so later edits to
+`hyperparameters.py` only affect new runs (and saved runs that predate a
+parameter, which fall back to the current value with a warning).
+
 #### Training
 You can then start training your agent with:
 ```
 $ python -m rl_agents.train <ALGO> -s <SEED>
 ```
 where `<ALGO>` can be either `SAC` or `PPO` and `<SEED>` is an optional random seed.
+Select the complete experiment configuration with `--method`; no matching
+changes in `hyperparameters.py` are required:
+```
+$ python -m rl_agents.train PPO --method original
+$ python -m rl_agents.train PPO --method custom
+$ python -m rl_agents.train PPO --method lagrangian
+$ python -m rl_agents.train PPO --method bcp
+```
+`original` uses the upstream ANM6Easy reward, `custom` uses the custom fixed
+reward, `lagrangian` uses the custom environment with adaptive multipliers, and
+`bcp` uses the custom energy objective with fixed normalized penalties. If
+`--method` is omitted, `original` is used.
+
+#### External load and generation profiles
+
+Every Gym-ANM-compatible environment can use profiles selected entirely from the
+command line. The environment implementation is left unchanged, so `original`,
+`custom`, `lagrangian`, `bcp`, and future environments still keep their own
+dynamics and reward definitions.
+
+Pass one NPZ or CSV file for training. Evaluation uses the same source with the
+`validation` split unless an evaluation source is supplied explicitly:
+```
+$ python -m rl_agents.train PPO --method original \
+    --profile-file 'profiles/{split}.npz'
+
+$ python -m rl_agents.train PPO --method custom \
+    --profile-file profiles/train.csv \
+    --eval-profile-file profiles/validation.csv
+```
+`{split}` is replaced with `train` or `validation`. A directory can also be
+passed; the loader looks for `profiles_<split>.npz`, `<split>.npz`, and the
+equivalent CSV names. Use `--profile-split` and `--eval-profile-split` to choose
+different split names.
+
+An NPZ file contains:
+
+- `load_p_mw`: load injections in MW;
+- `gen_p_max_mw`: available non-slack generation in MW;
+- optional `load_device_ids` and `gen_device_ids` arrays.
+
+The two profile arrays accept `(timesteps, devices)` or
+`(scenarios, timesteps, devices)`. Device-major forms are accepted too. Loads
+use the Gym-ANM injection convention and must therefore be non-positive;
+available generation must be non-negative. If IDs are omitted, columns follow
+the device order in the environment topology.
+
+A CSV uses one row per timestep and wide device columns. The optional
+`scenario` column groups rows into equal-length scenarios:
+```
+scenario,step,load:1,load:3,load:5,generation:2,generation:4
+weekday,0,-2.1,-1.8,-2.4,0.0,1.2
+weekday,1,-2.0,-1.7,-2.3,0.1,1.3
+```
+Rows within each scenario are read in file order; `step` is descriptive.
+
+For a database, API, or another custom source, expose a Python callable:
+```python
+def load_profiles(*, env, split, seed):
+    rows = query_database(split=split)
+    return {
+        "load_p_mw": rows.load_profiles,
+        "gen_p_max_mw": rows.generation_profiles,
+        "load_device_ids": rows.load_device_ids,
+        "gen_device_ids": rows.generator_device_ids,
+    }
+```
+Then reference it without editing the training files:
+```
+$ python -m rl_agents.train PPO --method lagrangian \
+    --profile-provider my_project.profiles:load_profiles
+```
+The callable receives the unwrapped environment, split name, and profile seed.
+It may return the mapping shown above or `rl_agents.profiles.ProfileBank`.
+Profile settings are saved with the run and automatically reused when training
+is resumed, evaluated, or visualized.
 
 Results will be saved in a new directory `<BASE_DIR>/<ENV_ID>/run_i/` where `i` is replaced by an integer
 so as to create a new directory.
@@ -74,16 +160,18 @@ settings can be supplied from the command line:
 ```
 $ python -m rl_agents.train PPO --seed 1 \
     --run-dir results/experiment_01/lagrangian/seed_1 \
-    --lagrangian --eval-freq 200000 --eval-episodes 3
+    --method lagrangian \
+    --eval-freq 200000 --eval-episodes 3
 ```
 The output directory must not already exist. At completion, the run contains both
-the best validation checkpoint (`best_model.zip`) and the last training state
-(`final_model.zip` and `final_vec_env`).
+the best validation checkpoint (`best_model.zip`, `training_vec_env`, and
+`best_lambda_state.npy` for Lagrangian runs) and the last training state
+(`final_model.zip`, `final_vec_env`, and `lambda_state.npy`).
 
 #### Five-seed comparison with Slurm
-The `train_compare_array.slurm` job array runs the same five seeds for the
-Lagrangian and standard configurations (10 independent jobs). At most two jobs
-run concurrently by default. Submit it from this directory with:
+The `train_compare_array.slurm` job array runs the same five seeds on the custom
+Lagrangian method and the original ANM6Easy baseline (10 independent jobs). At
+most two jobs run concurrently by default. Submit it from this directory with:
 ```
 $ mkdir -p slurm_logs
 $ sbatch train_compare_array.slurm

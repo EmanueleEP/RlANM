@@ -12,6 +12,7 @@ from stable_baselines3.common.callbacks import BaseCallback, EventCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, VecNormalize, sync_envs_normalization
 
 from .evaluation import evaluate_policy
+from .wrappers import LagrangianWrapper
 
 
 class ProgressBarCallback(BaseCallback):
@@ -179,6 +180,27 @@ class EvalCallback(EventCallback):
         env.obs_rms = snapshot["obs_rms"]
         env.ret_rms = snapshot["ret_rms"]
 
+    def _save_best_lambda_state(self) -> None:
+        """Save the multipliers paired with the current best model checkpoint."""
+        env = self.training_env
+        while hasattr(env, "venv"):
+            env = env.venv
+
+        lambdas = []
+        for wrapped_env in getattr(env, "envs", []):
+            current = wrapped_env
+            while current is not None:
+                if isinstance(current, LagrangianWrapper):
+                    lambdas.append(current.get_lambda())
+                    break
+                current = getattr(current, "env", None)
+
+        if lambdas:
+            np.save(
+                os.path.join(self.best_model_save_path, "best_lambda_state.npy"),
+                np.mean(np.stack(lambdas, axis=0), axis=0),
+            )
+
     def _on_step(self) -> bool:
         if self.eval_freq <= 0 or self.n_calls % self.eval_freq != 0:
             return True
@@ -279,6 +301,7 @@ class EvalCallback(EventCallback):
                     self.eval_env.save(
                         os.path.join(self.best_model_save_path, "training_vec_env")
                     )
+                self._save_best_lambda_state()
 
             self.best_mean_reward = mean_reward
             if self.callback is not None:

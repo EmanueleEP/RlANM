@@ -8,7 +8,12 @@ from gym_anm import ANMEnv
 from .rendering.py import rendering
 from .network import network
 from .utils import random_date
-from ..BCP.fix_reward import build_constraint_costs
+from ..constraints import (
+    build_constraint_costs,
+    default_env_params,
+    reactive_usage_fraction,
+    validate_env_params,
+)
 
 
 class ANM6_Custom(ANMEnv):
@@ -35,6 +40,8 @@ class ANM6_Custom(ANMEnv):
         super().__init__(network, observation, K, delta_t, gamma, lamb, aux_bounds, costs_clipping, seed)
 
         self.include_branch_overload_in_constraints = True
+        # Reward/constraint parameters, defaults from rl_agents/hyperparameters.py.
+        self.env_params = default_env_params()
 
         # Rendering variables.
         self.network_specs = self.simulator.get_rendering_specs()
@@ -45,6 +52,10 @@ class ANM6_Custom(ANMEnv):
         self.skipped_frames = None
         self.render_mode = None
         self.is_rendering = False
+
+    def configure(self, **params):
+        """Override reward/constraint parameters (keys from env.constraints.ENV_PARAM_KEYS)."""
+        self.env_params.update(validate_env_params(params))
 
     def render(self, mode="human", skip_frames=0):
         """
@@ -171,6 +182,7 @@ class ANM6_Custom(ANMEnv):
         v_violation = np.maximum(0, bus_v - v_max) + np.maximum(0, v_min - bus_v)
 
         delta_t_h = float(getattr(self, "delta_t", 0.25))
+        params = self.env_params
 
         branch_s_dict = full_state.get("branch_s", {}).get("MVA", {})
         branch_ids = sorted(self.simulator.branches.keys())
@@ -187,7 +199,7 @@ class ANM6_Custom(ANMEnv):
 
             branch_overload_mva_max = max(branch_overload_mva_max, overload_mva)
             branch_overload_mvah += overload_mva * delta_t_h
-            branch_soft_penalty_mvah += max(0.0, s_mva - 0.8 * s_max) * delta_t_h
+            branch_soft_penalty_mvah += max(0.0, s_mva - params["BRANCH_SOFT_LOADING"] * s_max) * delta_t_h
             branch_loading[br_id] = s_mva / max(s_max, 1e-6)
 
         # Constraint costs (used by LagrangianWrapper)
@@ -205,6 +217,9 @@ class ANM6_Custom(ANMEnv):
             v_violation_pu_max=v_violation_pu_max,
             combined_p_constraint_pu=combined_p_constraint,
             q_violation_pu_max=q_violation_pu_max,
+            v_tol=params["V_TOL"],
+            p_tol=params["P_TOL"],
+            q_tol=params["Q_TOL"],
         )
         info["constraint/v_violation_pu_max"] = v_violation_pu_max
         info["constraint/p_violation_pu_max"] = p_violation_pu_max
@@ -232,8 +247,8 @@ class ANM6_Custom(ANMEnv):
         des_soc_dict = full_state.get("des_soc", {}).get("MWh", {})
 
         soc_boundary_cost = 0.0
-        SOC_LOW = 0.15
-        SOC_HIGH = 0.95
+        SOC_LOW = params["SOC_LOW"]
+        SOC_HIGH = params["SOC_HIGH"]
         total_battery_soc_mwh = 0.0
 
         for dev_id in storage_ids:
@@ -254,15 +269,17 @@ class ANM6_Custom(ANMEnv):
         q_magnitude_mvarh = total_q_mvar * delta_t_h
 
         if getattr(self, "use_lagrangian_reward", False):
-            q_magnitude_pu = float(total_q_mvar / base_mva) if base_mva else 0.0
-            info["constraint_costs"][2] = q_magnitude_pu
+            # Fraction of the controllable reactive capability in use, compared with Q_LIMIT.
+            info["constraint_costs"][2] = reactive_usage_fraction(
+                device_data, controllable_q_ids, dev_q_dict, base_mva
+            )
 
-        W_CURTAIL       = 1.0   # per MWh curtailed
-        W_SLACK_IMPORT  = 1.0   # per MWh imported from grid
-        W_SLACK_EXPORT  = 0.1   # per MWh exported to grid (less bad than curtailment)
-        W_SOC_BOUNDARY  = 30.0  # quadratic penalty near SoC boundaries
-        W_Q_MAGNITUDE   = 0.5   # per MVArh of unnecessary reactive power
-        W_BRANCH_SOFT   = 1.0   # per MVAh above 80% loading
+        W_CURTAIL       = params["W_CURTAIL"]
+        W_SLACK_IMPORT  = params["W_SLACK_IMPORT"]
+        W_SLACK_EXPORT  = params["W_SLACK_EXPORT"]
+        W_SOC_BOUNDARY  = params["W_SOC_BOUNDARY"]
+        W_Q_MAGNITUDE   = params["W_Q_MAGNITUDE"]
+        W_BRANCH_SOFT   = params["W_BRANCH_SOFT"]
 
         curtailment_mwh   = curtailment_mw   * delta_t_h
         slack_import_mwh  = slack_import_mw  * delta_t_h

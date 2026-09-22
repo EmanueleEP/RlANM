@@ -20,7 +20,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from rl_agents.hyperparameters import (
     GAMMA,
-    INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS,
+    BATTERY_CLIP_PENALTY,
     ENV_ID as DEFAULT_ENV_ID,
     MAX_EVAL_EP_LENGTH as DEFAULT_MAX_EVAL_EP_LENGTH,
     V_TOLERANCE,
@@ -33,7 +33,12 @@ from rl_agents.hyperparameters import (
     FORECAST_HORIZON_STEPS,
 )
 
-from rl_agents.utils import make_env_with_profile_seed
+from rl_agents.utils import (
+    make_env_with_profile_seed,
+    configure_env,
+    get_training_config,
+    load_run_config,
+)
 
 def read_run_hyperparameters(run_path):
     """Read ENV_ID and MAX_EVAL_EP_LENGTH from a run's hyperparameters.txt."""
@@ -57,16 +62,19 @@ from rl_agents.wrappers import (
 )
 
 
-def make_eval_env(env_id, max_ep_length, include_branch_overload,
+def make_eval_env(env_id, max_ep_length, env_config,
                   eval_profile_seed: int = 456,
                   solar_scale: float = 1.0, load_scale: float = 1.0,
+                  profile_file=None, profile_provider=None,
+                  profile_split="validation",
                   lambda_values=None, v_tolerance: float = V_TOLERANCE,
                   pq_limit: float = PQ_LIMIT, q_limit: float = Q_LIMIT,
                   peak_weight: float = PEAK_WEIGHT,
                   lambda_max: float = LAMBDA_MAX,
                   pfe_penalty: float = PFE_TERMINATE_PENALTY,
                   pfe_lambda_steps: float = PFE_LAMBDA_STEPS,
-                  forecast_horizon: int = FORECAST_HORIZON_STEPS):
+                  forecast_horizon: int = FORECAST_HORIZON_STEPS,
+                  battery_clip_penalty: float = BATTERY_CLIP_PENALTY):
     """Build an eval env, optionally reproducing the frozen training reward."""
     def _init():
         env = make_env_with_profile_seed(
@@ -74,14 +82,15 @@ def make_eval_env(env_id, max_ep_length, include_branch_overload,
             profile_seed=eval_profile_seed,
             solar_scale=solar_scale,
             load_scale=load_scale,
+            profile_file=profile_file,
+            profile_provider=profile_provider,
+            profile_split=profile_split,
         )
-        if hasattr(env, "include_branch_overload_in_constraints"):
-            env.include_branch_overload_in_constraints = bool(include_branch_overload)
         reproduce_lagrangian = lambda_values is not None
-        env.unwrapped.use_lagrangian_reward = reproduce_lagrangian
+        configure_env(env, env_config, use_lagrangian_reward=reproduce_lagrangian)
         env = TimeLimitWrapper(env, max_episode_steps=max_ep_length)
         env = NormalizeActionWrapper(env)
-        env = BatteryClipWrapper(env, clip_penalty_weight=10.0 if reproduce_lagrangian else 0.0)
+        env = BatteryClipWrapper(env, clip_penalty_weight=battery_clip_penalty if reproduce_lagrangian else 0.0)
         if forecast_horizon > 0:
             env = ForecastObsWrapper(env, horizon_steps=forecast_horizon)
         if reproduce_lagrangian:
@@ -105,8 +114,8 @@ def make_eval_env(env_id, max_ep_length, include_branch_overload,
 
 
 def load_lambda_state(run_path):
-    """Load saved Lagrangian lambda values from a run directory."""
-    lam_path = os.path.join(run_path, "lambda_state.npy")
+    """Load the Lagrangian multipliers paired with the best model."""
+    lam_path = os.path.join(run_path, "best_lambda_state.npy")
     if os.path.exists(lam_path):
         lam = np.asarray(np.load(lam_path, allow_pickle=False), dtype=np.float32)
         if lam.shape != (3,) or not np.all(np.isfinite(lam)) or np.any(lam < 0):
@@ -117,7 +126,8 @@ def load_lambda_state(run_path):
 
 def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
                    eval_profile_seed=456, solar_scale=1.0, load_scale=1.0,
-                   env_id_override=None):
+                   env_id_override=None, profile_file_override=None,
+                   profile_provider_override=None, profile_split_override=None):
     """Run n_episodes and collect detailed metrics."""
 
     vec_env_path = os.path.join(run_path, "training_vec_env")
@@ -132,17 +142,16 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
     env_id = env_id_override if env_id_override else hp.get("ENV_ID", DEFAULT_ENV_ID)
     max_ep_length = int(hp.get("MAX_EVAL_EP_LENGTH", DEFAULT_MAX_EVAL_EP_LENGTH))
     use_lagrangian = hp.get("USE_LAGRANGIAN", "False").lower() == "true"
-    include_branch_overload = (
-        hp.get("INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS", str(INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)).lower()
-        == "true"
-    )
+    # Saved run values (environment reward/constraint parameters included),
+    # falling back to the current hyperparameters.py for older runs.
+    env_config = load_run_config(run_path, get_training_config())
 
     # Load lambda for Lagrangian reward computation
     lam = load_lambda_state(run_path) if use_lagrangian else None
     if lam is not None:
         print(f"  Lambda loaded: {lam}")
     elif use_lagrangian:
-        print(f"  WARNING: USE_LAGRANGIAN=True but no lambda_state.npy found")
+        print(f"  WARNING: USE_LAGRANGIAN=True but no best_lambda_state.npy found")
 
     print(f"  ENV_ID: {env_id}, MAX_EVAL_EP_LENGTH: {max_ep_length}")
 
@@ -151,13 +160,28 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
         value = hp.get(key)
         return default if value in (None, "None") else float(value)
 
+    def saved_optional(key):
+        value = hp.get(key)
+        return None if value in (None, "", "None") else value
+
+    if profile_file_override is not None or profile_provider_override is not None:
+        profile_file = profile_file_override
+        profile_provider = profile_provider_override
+    else:
+        profile_file = saved_optional("EVAL_PROFILE_FILE")
+        profile_provider = saved_optional("EVAL_PROFILE_PROVIDER")
+    profile_split = profile_split_override or saved_optional("EVAL_PROFILE_SPLIT") or "validation"
+
     env = DummyVecEnv([make_eval_env(
         env_id,
         max_ep_length,
-        include_branch_overload,
+        env_config,
         eval_profile_seed,
         solar_scale,
         load_scale,
+        profile_file=profile_file,
+        profile_provider=profile_provider,
+        profile_split=profile_split,
         lambda_values=lam,
         v_tolerance=saved_float("V_TOLERANCE", V_TOLERANCE),
         pq_limit=saved_float("PQ_LIMIT", PQ_LIMIT),
@@ -167,6 +191,7 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
         pfe_penalty=saved_float("PFE_TERMINATE_PENALTY", PFE_TERMINATE_PENALTY),
         pfe_lambda_steps=saved_float("PFE_LAMBDA_STEPS", PFE_LAMBDA_STEPS),
         forecast_horizon=int(saved_float("FORECAST_HORIZON_STEPS", FORECAST_HORIZON_STEPS)),
+        battery_clip_penalty=float(env_config["BATTERY_CLIP_PENALTY"]),
     )])
 
     if os.path.exists(vec_env_path):
@@ -581,6 +606,19 @@ def parse_args():
     parser.add_argument("--env-id", type=str, default=None,
                         help="Override ENV_ID from hyperparameters.txt. Useful to evaluate "
                              "ANM6Easy-trained agents on Custom_ANM6Easy-v0 for detailed metrics.")
+    profile_source = parser.add_mutually_exclusive_group()
+    profile_source.add_argument(
+        "--profile-file", default=None,
+        help="Override the saved evaluation profile with an NPZ or CSV file.",
+    )
+    profile_source.add_argument(
+        "--profile-provider", default=None,
+        help="Override the saved evaluation profile with package.module:callable.",
+    )
+    parser.add_argument(
+        "--profile-split", default=None,
+        help="Override the saved evaluation split.",
+    )
     parser.add_argument("--no-save", action="store_true", help="Don't save results to JSON")
     return parser.parse_args()
 
@@ -604,6 +642,9 @@ def main():
             seed=args.seed, eval_profile_seed=args.eval_profile_seed,
             solar_scale=args.solar_scale, load_scale=args.load_scale,
             env_id_override=args.env_id,
+            profile_file_override=args.profile_file,
+            profile_provider_override=args.profile_provider,
+            profile_split_override=args.profile_split,
         )
         print_summary(episodes, label)
 

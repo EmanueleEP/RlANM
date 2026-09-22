@@ -10,6 +10,59 @@ import warnings
 import gymnasium as gym
 import numpy as np
 
+from .profiles import apply_external_profiles
+
+
+TRAINING_METHODS = {
+    "original": ("gym_anm:ANM6Easy-v0", False, False),
+    "custom": ("Custom_ANM6Easy-v0", False, False),
+    "lagrangian": ("Custom_ANM6Easy-v0", True, False),
+    "bcp": ("Custom_ANM6Easy-v0", False, True),
+}
+
+_OPTIONAL_STRING_CONFIG_KEYS = {
+    "PROFILE_FILE",
+    "PROFILE_PROVIDER",
+    "EVAL_PROFILE_FILE",
+    "EVAL_PROFILE_PROVIDER",
+}
+
+
+def _reject_method_overrides(args):
+    if args.method is not None and any(
+        value is not None for value in (args.env_id, args.lagrangian, args.bcp_reward)
+    ):
+        raise ValueError(
+            "--method cannot be combined with --env-id, --lagrangian, "
+            "--no-lagrangian, --bcp-reward, or --no-bcp-reward."
+        )
+
+
+def resolve_new_training_method(args):
+    """Resolve a new run's environment and reward method from CLI options only."""
+    _reject_method_overrides(args)
+    if args.method is not None:
+        env_id, use_lagrangian, use_bcp_reward = TRAINING_METHODS[args.method]
+        return args.method, env_id, use_lagrangian, use_bcp_reward
+
+    # Backward-compatible aliases. Their defaults are fixed here rather than
+    # inherited from hyperparameters.py, so a CLI command is self-contained.
+    use_lagrangian = bool(args.lagrangian)
+    use_bcp_reward = bool(args.bcp_reward) and not use_lagrangian
+    env_id = args.env_id
+    if env_id is None:
+        env_id = (
+            "Custom_ANM6Easy-v0"
+            if use_lagrangian or use_bcp_reward
+            else "gym_anm:ANM6Easy-v0"
+        )
+    validate_training_method(env_id, use_lagrangian, use_bcp_reward)
+
+    for method, configuration in TRAINING_METHODS.items():
+        if configuration == (env_id, use_lagrangian, use_bcp_reward):
+            return method, env_id, use_lagrangian, use_bcp_reward
+    return "manual", env_id, use_lagrangian, use_bcp_reward
+
 
 def save_hyperparameters(log_dir, params):
     """Write the list of all hyperparameters to a .txt file in the run directory."""
@@ -57,6 +110,8 @@ def load_run_config(run_dir, defaults):
                     if value.lower() not in ("true", "false"):
                         raise ValueError("expected True or False")
                     parsed = value.lower() == "true"
+                elif default is None and key in _OPTIONAL_STRING_CONFIG_KEYS:
+                    parsed = value
                 elif default is None:
                     parsed = float(value)
                 else:
@@ -77,20 +132,70 @@ def load_run_config(run_dir, defaults):
 
 def resolve_resume_config(args):
     """Resolve defaults < saved run < explicit CLI options."""
-    config = load_run_config(args.path, {**get_training_config(), "SEED": 1, "ALGO": args.agent})
+    _reject_method_overrides(args)
+    config = load_run_config(args.path, {
+        **get_training_config(),
+        "SEED": 1,
+        "ALGO": args.agent,
+        "PROFILE_FILE": None,
+        "PROFILE_PROVIDER": None,
+        "PROFILE_SPLIT": "train",
+        "EVAL_PROFILE_FILE": None,
+        "EVAL_PROFILE_PROVIDER": None,
+        "EVAL_PROFILE_SPLIT": "validation",
+    })
     if config["ALGO"] != args.agent:
         raise ValueError(f"Saved run uses {config['ALGO']}, but {args.agent} was requested.")
+    if args.method is not None:
+        expected = TRAINING_METHODS[args.method]
+        saved = (config["ENV_ID"], config["USE_LAGRANGIAN"], config["USE_BCP_REWARD"])
+        if saved != expected:
+            raise ValueError(
+                f"Saved run configuration {saved} does not match --method {args.method} ({expected})."
+            )
+    requested_env_id = getattr(args, "env_id", None)
+    if requested_env_id is not None and requested_env_id != config["ENV_ID"]:
+        raise ValueError(
+            f"Cannot change environment when resuming: saved {config['ENV_ID']}, "
+            f"requested {requested_env_id}."
+        )
     for argument, key in (("seed", "SEED"), ("steps", "TRAIN_STEPS"),
                           ("eval_freq", "EVAL_FREQ"),
                           ("eval_episodes", "N_EVAL_EPISODES"),
                           ("lagrangian", "USE_LAGRANGIAN"),
-                          ("bcp_reward", "USE_BCP_REWARD")):
+                          ("bcp_reward", "USE_BCP_REWARD"),
+                          ("profile_file", "PROFILE_FILE"),
+                          ("profile_provider", "PROFILE_PROVIDER"),
+                          ("profile_split", "PROFILE_SPLIT"),
+                          ("eval_profile_file", "EVAL_PROFILE_FILE"),
+                          ("eval_profile_provider", "EVAL_PROFILE_PROVIDER"),
+                          ("eval_profile_split", "EVAL_PROFILE_SPLIT")):
         value = getattr(args, argument)
         if value is not None:
             config[key] = value
+    if args.profile_file is not None:
+        config["PROFILE_PROVIDER"] = None
+    elif args.profile_provider is not None:
+        config["PROFILE_FILE"] = None
+    if args.eval_profile_file is not None:
+        config["EVAL_PROFILE_PROVIDER"] = None
+    elif args.eval_profile_provider is not None:
+        config["EVAL_PROFILE_FILE"] = None
     if config["USE_LAGRANGIAN"]:
         config["USE_BCP_REWARD"] = False
+    validate_training_method(
+        config["ENV_ID"], config["USE_LAGRANGIAN"], config["USE_BCP_REWARD"]
+    )
     return config
+
+
+def validate_training_method(env_id, use_lagrangian, use_bcp_reward):
+    """Reject reward methods that require metrics absent from original ANM6Easy."""
+    if env_id == "gym_anm:ANM6Easy-v0" and (use_lagrangian or use_bcp_reward):
+        raise ValueError(
+            "gym_anm:ANM6Easy-v0 does not expose constraint_costs. "
+            "Use --method lagrangian or --method bcp."
+        )
 
 
 def make_log_dirs(log_dir):
@@ -192,6 +297,18 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("agent", type=str, help="Agent to train")
+    parser.add_argument(
+        "--method",
+        choices=tuple(TRAINING_METHODS),
+        default=None,
+        help="Complete training method for a new run: original, custom, lagrangian, or bcp.",
+    )
+    parser.add_argument(
+        "--env-id",
+        type=str,
+        default=None,
+        help="Advanced environment override used only when --method is omitted.",
+    )
     run_group = parser.add_mutually_exclusive_group()
     run_group.add_argument(
         "--path", '-p', type=str, default=None,
@@ -227,6 +344,32 @@ def parse_args():
         default=None,
         help="Override the number of episodes per evaluation.",
     )
+    profile_source = parser.add_mutually_exclusive_group()
+    profile_source.add_argument(
+        "--profile-file",
+        default=None,
+        help="NPZ or CSV load/generation profiles for training; supports {split} in the path.",
+    )
+    profile_source.add_argument(
+        "--profile-provider",
+        default=None,
+        help="Python profile provider as package.module:callable (for databases or APIs).",
+    )
+    parser.add_argument("--profile-split", default=None, help="Training profile split (default: train).")
+    eval_profile_source = parser.add_mutually_exclusive_group()
+    eval_profile_source.add_argument(
+        "--eval-profile-file",
+        default=None,
+        help="Optional evaluation profile file; defaults to --profile-file.",
+    )
+    eval_profile_source.add_argument(
+        "--eval-profile-provider",
+        default=None,
+        help="Optional evaluation provider; defaults to --profile-provider.",
+    )
+    parser.add_argument(
+        "--eval-profile-split", default=None, help="Evaluation profile split (default: validation)."
+    )
     parser.add_argument(
         "--disable-step-log",
         action="store_true",
@@ -236,16 +379,14 @@ def parse_args():
         "--lagrangian",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Override USE_LAGRANGIAN from the saved run or hyperparameters.py. "
-             "--lagrangian forces Lagrangian, --no-lagrangian forces standard.",
+        help="Backward-compatible method override used when --method is omitted.",
     )
     parser.add_argument(
         "--bcp-reward",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=None,
         help="Use BCP energy-only base reward with fixed penalty weights instead of "
-             "ANM6Easy reward. Only active when --no-lagrangian is set. "
-             "When omitted, use USE_BCP_REWARD from the saved run or hyperparameters.py.",
+             "ANM6Easy reward. Backward-compatible alias used when --method is omitted.",
     )
 
     args = parser.parse_args()
@@ -260,9 +401,32 @@ def _positive_int(value):
     return parsed
 
 
+def configure_env(env, config, use_lagrangian_reward=None):
+    """Apply a run configuration to the unwrapped environment.
+
+    `config` maps hyperparameter names to values (current defaults from
+    get_training_config() or a saved run from load_run_config()). Environments
+    without these settings, such as the original ANM6Easy, are left unchanged.
+    """
+    from env.constraints import ENV_PARAM_KEYS
+
+    base = env.unwrapped
+    if hasattr(base, "configure"):
+        base.configure(**{key: config[key] for key in ENV_PARAM_KEYS if key in config})
+    if (hasattr(base, "include_branch_overload_in_constraints")
+            and "INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS" in config):
+        base.include_branch_overload_in_constraints = bool(
+            config["INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS"]
+        )
+    if use_lagrangian_reward is not None:
+        base.use_lagrangian_reward = bool(use_lagrangian_reward)
+    return env
+
+
 def make_env_with_profile_seed(env_id: str, profile_seed: int = None,
                                solar_scale: float = None, load_scale: float = None,
-                               **kwargs):
+                               profile_file: str = None, profile_provider: str = None,
+                               profile_split: str = "train", **kwargs):
     """
     Create an environment, optionally passing profile_seed, solar_scale, load_scale.
     Some environments (like BCP-v0) accept them, others (like ANM6Easy) don't.
@@ -286,7 +450,7 @@ def make_env_with_profile_seed(env_id: str, profile_seed: int = None,
 
     # First attempt: try with all parameters
     try:
-        return gym.make(env_id, **base_kwargs)
+        env = gym.make(env_id, **base_kwargs)
     except TypeError:
         # If it fails, remove the optional parameters and try again
         reduced_kwargs = {k: v for k, v in base_kwargs.items() if k not in optional_params}
@@ -304,4 +468,10 @@ def make_env_with_profile_seed(env_id: str, profile_seed: int = None,
         if load_scale is not None and hasattr(env.unwrapped, 'load_scale'):
             env.unwrapped.load_scale = load_scale
 
-        return env
+    return apply_external_profiles(
+        env,
+        profile_file=profile_file,
+        profile_provider=profile_provider,
+        split=profile_split,
+        seed=profile_seed,
+    )

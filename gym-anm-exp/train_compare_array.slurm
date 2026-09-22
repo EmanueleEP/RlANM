@@ -17,10 +17,8 @@ SEED="${SEEDS[$SEED_INDEX]}"
 
 if (( TASK_ID < ${#SEEDS[@]} )); then
     METHOD="lagrangian"
-    METHOD_ARGS=(--lagrangian)
 else
-    METHOD="standard"
-    METHOD_ARGS=(--no-lagrangian)
+    METHOD="original"
 fi
 
 PROJECT_DIR="/home/paseemanue/Desktop/rl_tesi/RlANM/gym-anm-exp"
@@ -45,4 +43,4 @@ srun python -m rl_agents.train PPO \
     --eval-freq "${EVAL_FREQ}" \
     --eval-episodes "${EVAL_EPISODES}" \
     --step-log-every 5000 \
-    "${METHOD_ARGS[@]}"
+    --method "${METHOD}"

@@ -25,7 +25,13 @@ from stable_baselines3.ppo import PPO
 
 
 from .callbacks import ProgressBarManager, EvalCallback
-from .utils import parse_args, make_env_with_profile_seed, resolve_resume_config, make_monitor_session
+from .utils import (
+    parse_args,
+    make_env_with_profile_seed,
+    resolve_resume_config,
+    make_monitor_session,
+    configure_env,
+)
 from .wrappers import (
     LagrangianWrapper,
     StandardPenaltyWrapper,
@@ -71,9 +77,16 @@ def main(args=None):
     print(f"Using {device}")
 
     # Paths
-    AGENT_PATH = os.path.join(LOG_DIR, 'best_model.zip')
-    ENV_PATH = os.path.join(LOG_DIR, 'training_vec_env')
-    LAMBDA_PATH = os.path.join(LOG_DIR, 'lambda_state.npy')
+    final_agent_path = os.path.join(LOG_DIR, 'final_model.zip')
+    final_env_path = os.path.join(LOG_DIR, 'final_vec_env')
+    if os.path.exists(final_agent_path) and os.path.exists(final_env_path):
+        AGENT_PATH = final_agent_path
+        ENV_PATH = final_env_path
+        LAMBDA_PATH = os.path.join(LOG_DIR, 'lambda_state.npy')
+    else:
+        AGENT_PATH = os.path.join(LOG_DIR, 'best_model.zip')
+        ENV_PATH = os.path.join(LOG_DIR, 'training_vec_env')
+        LAMBDA_PATH = os.path.join(LOG_DIR, 'best_lambda_state.npy')
     TENSORBOARD_LOG = os.path.join(LOG_DIR, 'tensorboard')
 
     if not os.path.exists(AGENT_PATH):
@@ -86,8 +99,16 @@ def main(args=None):
 
     print(f"Continuing training from {AGENT_PATH}")
 
+    if cfg.USE_LAGRANGIAN and not os.path.exists(LAMBDA_PATH):
+        print(
+            f"WARNING: No lambda checkpoint paired with {AGENT_PATH}; "
+            "using the default lambda values."
+        )
+
     # Restore lambda from disk
-    lambda_init_value = np.array([0.5, 0.5, 0.5], dtype=np.float32)
+    lambda_init_value = np.array(
+        [cfg.LAMBDA_INIT_V, cfg.LAMBDA_INIT_P, cfg.LAMBDA_INIT_Q], dtype=np.float32
+    )
     if cfg.USE_LAGRANGIAN and os.path.exists(LAMBDA_PATH):
         try:
             loaded = np.load(LAMBDA_PATH).astype(np.float32)
@@ -115,14 +136,18 @@ def main(args=None):
     # Environment factories (identical to train.py)
     def make_train_env(rank: int = 0):
         def _init():
-            env = gym.make(cfg.ENV_ID)
-            if hasattr(env, "include_branch_overload_in_constraints"):
-                env.include_branch_overload_in_constraints = bool(cfg.INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
-            env.unwrapped.use_lagrangian_reward = bool(cfg.USE_LAGRANGIAN or cfg.USE_BCP_REWARD)
+            env = make_env_with_profile_seed(
+                cfg.ENV_ID,
+                profile_seed=SEED + rank,
+                profile_file=cfg.PROFILE_FILE,
+                profile_provider=cfg.PROFILE_PROVIDER,
+                profile_split=cfg.PROFILE_SPLIT,
+            )
+            configure_env(env, vars(cfg), use_lagrangian_reward=cfg.USE_LAGRANGIAN or cfg.USE_BCP_REWARD)
 
             env = TimeLimitWrapper(env, max_episode_steps=cfg.MAX_TRAINING_EP_LENGTH)
             env = NormalizeActionWrapper(env)
-            env = BatteryClipWrapper(env)
+            env = BatteryClipWrapper(env, clip_penalty_weight=cfg.BATTERY_CLIP_PENALTY)
 
             if cfg.FORECAST_HORIZON_STEPS > 0:
                 env = ForecastObsWrapper(env, horizon_steps=cfg.FORECAST_HORIZON_STEPS)
@@ -147,7 +172,8 @@ def main(args=None):
                     w_p=cfg.STANDARD_PENALTY_W_P,
                     w_q=cfg.STANDARD_PENALTY_W_Q,
                 )
-            # For standard ANM6Easy runs, preserve the environment's native reward.
+            # original/custom: no penalty wrapper, but BatteryClipWrapper and
+            # PFETerminateWrapper still add their penalties to the native reward.
 
             env = PFETerminateWrapper(
                 env,
@@ -162,9 +188,14 @@ def main(args=None):
     def make_eval_env(rank: int = 0):
         """Evaluation env: no penalty wrappers, only the termination penalty."""
         def _init():
-            env = make_env_with_profile_seed(cfg.ENV_ID, profile_seed=456)  # fixed seed for eval
-            if hasattr(env, "include_branch_overload_in_constraints"):
-                env.include_branch_overload_in_constraints = bool(cfg.INCLUDE_BRANCH_OVERLOAD_IN_CONSTRAINTS)
+            env = make_env_with_profile_seed(
+                cfg.ENV_ID,
+                profile_seed=456,
+                profile_file=cfg.EVAL_PROFILE_FILE,
+                profile_provider=cfg.EVAL_PROFILE_PROVIDER,
+                profile_split=cfg.EVAL_PROFILE_SPLIT,
+            )
+            configure_env(env, vars(cfg))
             env = TimeLimitWrapper(env, max_episode_steps=cfg.MAX_EVAL_EP_LENGTH)
             env = NormalizeActionWrapper(env)
             env = BatteryClipWrapper(env, clip_penalty_weight=0.0)

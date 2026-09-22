@@ -9,6 +9,12 @@ class ANM6Easy_Custom(ANM6_Custom):
     """The :code:`ANM6Easy-v0` task."""
 
     def __init__(self):
+        # These task parameters must match gym-anm's original ANM6Easy-v0, which
+        # the `original` method trains on and which hardcodes them. Keeping them
+        # here (not in hyperparameters.py) prevents comparing methods on two
+        # different tasks. Besides delta_t (15-minute steps), they only affect
+        # info["reward_base_anm"] and the power-flow collapse reward
+        # -costs_clipping[1] / (1 - gamma) = -20000.
         observation = "state"  # fully observable environment
         K = 1
         delta_t = 0.25  # 15 minutes between timesteps

@@ -14,11 +14,15 @@ class ForecastObsWrapper(gym.ObservationWrapper):
             raise ValueError("horizon_steps must be >= 1")
 
         base = env.unwrapped
-        if not hasattr(base, "P_loads") or not hasattr(base, "P_maxs"):
+        self._external_bank = getattr(base, "external_profile_bank", None)
+        if self._external_bank is not None:
+            self._p_loads = np.asarray(self._external_bank.load_p_mw[0].T, dtype=np.float32)
+            self._p_maxs = np.asarray(self._external_bank.gen_p_max_mw[0].T, dtype=np.float32)
+        elif not hasattr(base, "P_loads") or not hasattr(base, "P_maxs"):
             raise ValueError("Underlying env must expose P_loads and P_maxs for ForecastObsWrapper.")
-
-        self._p_loads = np.asarray(base.P_loads, dtype=np.float32)
-        self._p_maxs = np.asarray(base.P_maxs, dtype=np.float32)
+        else:
+            self._p_loads = np.asarray(base.P_loads, dtype=np.float32)
+            self._p_maxs = np.asarray(base.P_maxs, dtype=np.float32)
         if self._p_loads.ndim != 2 or self._p_maxs.ndim != 2:
             raise ValueError("P_loads and P_maxs must be 2D arrays.")
 
@@ -39,12 +43,19 @@ class ForecastObsWrapper(gym.ObservationWrapper):
 
     def observation(self, observation):
         base = self.env.unwrapped
-        time_idx = int(getattr(base, "state", np.array([0]))[-1])
+        if self._external_bank is not None:
+            scenario, time_idx = base._external_profile_position
+            p_loads = np.asarray(self._external_bank.load_p_mw[scenario].T, dtype=np.float32)
+            p_maxs = np.asarray(self._external_bank.gen_p_max_mw[scenario].T, dtype=np.float32)
+        else:
+            time_idx = int(getattr(base, "state", np.array([0]))[-1])
+            p_loads = self._p_loads
+            p_maxs = self._p_maxs
         feats = []
         for h in range(1, self.horizon_steps + 1):
             idx = (time_idx + h) % self._steps_per_day
-            feats.append(self._p_loads[:, idx])
-            feats.append(self._p_maxs[:, idx])
+            feats.append(p_loads[:, idx])
+            feats.append(p_maxs[:, idx])
         forecast = np.concatenate(feats, axis=0).astype(np.float32)
         return np.concatenate([np.asarray(observation, dtype=np.float32), forecast], axis=0)
 
