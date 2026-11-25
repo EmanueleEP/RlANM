@@ -86,6 +86,13 @@ LAMBDA_MAX = 10.0 # maximum allowed lambda value
 LAMBDA_INIT_V = 0.5 # initial lambda for new runs / resumes without a saved lambda
 LAMBDA_INIT_P = 3.5
 LAMBDA_INIT_Q = 0.5
+LAMBDA_UPDATE = "gradient" # "gradient" or "pid"; set by --method lagrangian / lagrangian_pid
+
+# PID Lagrangian gains (Stooke et al., 2020), applied once per episode to the
+# same error (effective cost - limit) used by the gradient update.
+PID_KP = 0.1
+PID_KI = 0.01 # the integral term alone is the gradient update with LAMBDA_LR = PID_KI
+PID_KD = 0.05
 
 # Fixed penalty weights for StandardPenaltyWrapper
 # Used when USE_LAGRANGIAN=False and/or --bcp-reward is active.

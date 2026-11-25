@@ -64,6 +64,9 @@ from .hyperparameters import (
     LAMBDA_INIT_V,
     LAMBDA_INIT_P,
     LAMBDA_INIT_Q,
+    PID_KP,
+    PID_KI,
+    PID_KD,
 )
 
 from .callbacks import ProgressBarManager, EvalCallback
@@ -130,6 +133,7 @@ def _make_train_env_factory(
     profile_file=None,
     profile_provider=None,
     profile_split="train",
+    pid_gains=None,
 ):
     """
     Factory that creates a training environment for each parallel rank.
@@ -166,6 +170,7 @@ def _make_train_env_factory(
                     n_envs=n_envs,
                     peak_weight=peak_weight,
                     lambda_max=lambda_max,
+                    pid_gains=pid_gains,
                 )
             elif use_bcp_reward:
                 # BCP energy‑only base + fixed penalty weights (no adaptive dual variables)
@@ -240,6 +245,8 @@ def main():
     SEED = args.seed if args.seed is not None else 1
     method, env_id, use_lagrangian, use_bcp_reward = resolve_new_training_method(args)
     print(f"Training method: {method} (ENV_ID={env_id})")
+    lambda_update = "pid" if method == "lagrangian_pid" else "gradient"
+    pid_gains = (PID_KP, PID_KI, PID_KD) if lambda_update == "pid" else None
 
     # Override steps from CLI 
     train_steps = int(args.steps) if args.steps is not None else _DEFAULT_TRAIN_STEPS
@@ -303,6 +310,7 @@ def main():
         save_hyperparameters(run_log_dir, {
             **get_training_config(),
             "METHOD": method,
+            "LAMBDA_UPDATE": lambda_update,
             "SEED": SEED,
             "ENV_ID": env_id,
             "LOG_DIR": run_log_dir,
@@ -364,6 +372,7 @@ def main():
         profile_file=profile_file,
         profile_provider=profile_provider,
         profile_split=profile_split,
+        pid_gains=pid_gains,
     )
     eval_factory = _make_eval_env_factory(
         env_id=env_id,

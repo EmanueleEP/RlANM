@@ -205,6 +205,17 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
     model = algo_class.load(zip_path, env=env, device=device,
                             custom_objects={"learning_rate": 3e-4, "clip_range": 0.2})
 
+    episodes = run_episodes(
+        env,
+        lambda obs, state: model.predict(obs, state=state, deterministic=True),
+        n_episodes, gamma, seed, has_lambda=lam is not None,
+    )
+    env.close()
+    return episodes
+
+
+def run_episodes(env, policy, n_episodes, gamma, seed, has_lambda=False):
+    """Run `policy(obs, state) -> (action, state)` on a 1-env VecEnv and collect metrics."""
     episodes = []
 
     for ep in range(n_episodes):
@@ -253,7 +264,7 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
         q_constraint_cost_list = []
 
         while not done:
-            action, state = model.predict(obs, state=state, deterministic=True)
+            action, state = policy(obs, state)
             obs, reward, dones, infos = env.step(action)
             info = infos[0]
             training_r = float(reward[0])
@@ -265,7 +276,7 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
 
             # With lambda available, the environment stack already reproduces
             # the training reward. Keep the ANM reward above as a separate metric.
-            if lam is not None:
+            if has_lambda:
                 lag_penalty = float(info.get("lagrangian_penalty", 0.0))
                 lag_r = training_r
             else:
@@ -339,7 +350,7 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
             "episode": ep,
             "reward": ep_reward,
             "discounted_reward": ep_discounted_reward,
-            "has_lambda": lam is not None,
+            "has_lambda": has_lambda,
             "lagrangian_reward": ep_lagrangian_reward,
             "lagrangian_discounted_reward": ep_lagrangian_discounted_reward,
             "lagrangian_penalty_total": ep_lagrangian_penalty_total,
@@ -397,9 +408,7 @@ def evaluate_agent(run_path, algo_class, n_episodes, gamma, seed=42,
         print(f"  Episode {ep+1}/{n_episodes}: reward={ep_reward:.1f}, "
               f"disc={ep_discounted_reward:.1f}, steps={ep_steps}, {safe}")
 
-    env.close()
     return episodes
-
 
 def print_summary(episodes, label=""):
     """Print aggregate statistics across episodes."""

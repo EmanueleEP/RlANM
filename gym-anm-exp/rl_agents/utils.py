@@ -17,6 +17,7 @@ TRAINING_METHODS = {
     "original": ("gym_anm:ANM6Easy-v0", False, False),
     "custom": ("Custom_ANM6Easy-v0", False, False),
     "lagrangian": ("Custom_ANM6Easy-v0", True, False),
+    "lagrangian_pid": ("Custom_ANM6Easy-v0", True, False),
     "bcp": ("Custom_ANM6Easy-v0", False, True),
 }
 
@@ -301,7 +302,8 @@ def parse_args():
         "--method",
         choices=tuple(TRAINING_METHODS),
         default=None,
-        help="Complete training method for a new run: original, custom, lagrangian, or bcp.",
+        help="Complete training method for a new run: original, custom, lagrangian, "
+             "lagrangian_pid, or bcp.",
     )
     parser.add_argument(
         "--env-id",

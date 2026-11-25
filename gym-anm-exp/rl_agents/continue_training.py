@@ -164,6 +164,8 @@ def main(args=None):
                     n_envs=cfg.N_ENVS,
                     peak_weight=cfg.PEAK_WEIGHT,
                     lambda_max=cfg.LAMBDA_MAX,
+                    pid_gains=((cfg.PID_KP, cfg.PID_KI, cfg.PID_KD)
+                               if cfg.LAMBDA_UPDATE == "pid" else None),
                 )
             elif cfg.USE_BCP_REWARD:
                 env = StandardPenaltyWrapper(

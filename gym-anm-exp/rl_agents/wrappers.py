@@ -166,6 +166,7 @@ class LagrangianWrapper(gym.Wrapper):
         lambda_max: float = 10.0,
         n_envs: int = 1,
         peak_weight: float = 0.2,
+        pid_gains=None,
     ):
         super().__init__(env)
         base_env = env.unwrapped
@@ -179,6 +180,11 @@ class LagrangianWrapper(gym.Wrapper):
         self.cost_limit = np.array([v_tolerance, pq_limit, q_lim], dtype=np.float32)
         self.peak_weight = float(np.clip(peak_weight, 0.0, 1.0))
 
+        # PID update (Stooke et al., 2020), (kp, ki, kd); None = gradient ascent.
+        self.pid_gains = None if pid_gains is None else tuple(float(g) for g in pid_gains)
+        if self.pid_gains is not None and n_envs > 1:
+            raise ValueError("The PID lambda update supports only n_envs=1.")
+
         # coherence check between lambda_lr and n_envs
         if n_envs > 1 and lambda_lr > 0.0:
             raise ValueError(
@@ -191,6 +197,9 @@ class LagrangianWrapper(gym.Wrapper):
             self.lam = lambda_init_arr.copy()
         else:
             self.lam = np.full(self.n_constraints, float(lambda_init_arr[0]), dtype=np.float32)
+        # The integral starts at the initial lambda, so a resumed run continues from it.
+        self.pid_integral = self.lam.copy()
+        self.pid_prev_cost = None
 
         self.episode_cost = np.zeros(self.n_constraints, dtype=np.float32)
         self.episode_cost_max = np.zeros(self.n_constraints, dtype=np.float32)
@@ -232,7 +241,7 @@ class LagrangianWrapper(gym.Wrapper):
         info["lagrangian_penalty"] = penalty
         info["lambda"] = self.lam.copy()
 
-        if (terminated or truncated) and self.lambda_lr > 0.0:
+        if (terminated or truncated) and (self.lambda_lr > 0.0 or self.pid_gains is not None):
             self._update_lambda()
 
         if terminated or truncated:
@@ -269,7 +278,18 @@ class LagrangianWrapper(gym.Wrapper):
         )
 
         gradient = effective_cost - self.cost_limit
-        self.lam = np.clip(self.lam + self.lambda_lr * gradient, 0.0, self.lambda_max)
+        if self.pid_gains is None:
+            self.lam = np.clip(self.lam + self.lambda_lr * gradient, 0.0, self.lambda_max)
+        else:
+            kp, ki, kd = self.pid_gains
+            # Clipping the integral to [0, lambda_max] prevents windup.
+            self.pid_integral = np.clip(self.pid_integral + ki * gradient, 0.0, self.lambda_max)
+            # Derivative only on rising cost, so it brakes overshoot without lowering lambda.
+            derivative = (np.zeros_like(effective_cost) if self.pid_prev_cost is None
+                          else np.maximum(0.0, effective_cost - self.pid_prev_cost))
+            self.pid_prev_cost = effective_cost.copy()
+            self.lam = np.clip(kp * gradient + self.pid_integral + kd * derivative,
+                               0.0, self.lambda_max).astype(np.float32)
         
         print(
             f"Episode ended | Steps: {self.episode_length}\n"
