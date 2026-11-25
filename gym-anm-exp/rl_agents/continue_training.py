@@ -166,6 +166,7 @@ def main(args=None):
                     lambda_max=cfg.LAMBDA_MAX,
                     pid_gains=((cfg.PID_KP, cfg.PID_KI, cfg.PID_KD)
                                if cfg.LAMBDA_UPDATE == "pid" else None),
+                    update_every=cfg.LAMBDA_UPDATE_STEPS,
                 )
             elif cfg.USE_BCP_REWARD:
                 env = StandardPenaltyWrapper(
@@ -181,6 +182,7 @@ def main(args=None):
                 env,
                 penalty=cfg.PFE_TERMINATE_PENALTY,
                 lambda_steps=cfg.PFE_LAMBDA_STEPS if cfg.USE_LAGRANGIAN else 0.0,
+                horizon_penalty=cfg.PFE_HORIZON_PENALTY,
             )
             env = Monitor(env, os.path.join(monitor_dir, f"train_{rank}.monitor.csv"))
             env.reset(seed=SEED + rank)

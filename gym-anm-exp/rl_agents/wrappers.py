@@ -116,12 +116,21 @@ class PFETerminateWrapper(gym.Wrapper):
     unprofitable at any lambda value.
 
     When no LagrangianWrapper is found, falls back to the fixed base_penalty.
+
+    With horizon_penalty=True the crash reward is also capped at
+    -worst_step_cost / (1 - gamma), where worst_step_cost is the largest
+    per-step cost (penalties included) seen so far: crashing then costs at least
+    as much as paying the worst step for the rest of the discounted horizon.
     """
 
-    def __init__(self, env: gym.Env, penalty: float = 100.0, lambda_steps: float = 0.0):
+    def __init__(self, env: gym.Env, penalty: float = 100.0, lambda_steps: float = 0.0,
+                 horizon_penalty: bool = False):
         super().__init__(env)
         self.penalty = float(penalty)
         self.lambda_steps = float(lambda_steps)
+        self.horizon_penalty = bool(horizon_penalty)
+        self.gamma = float(env.unwrapped.gamma)
+        self.worst_step_cost = 0.0
         self._lagrangian: "LagrangianWrapper | None" = None
         self._lagrangian_searched = False
 
@@ -145,10 +154,15 @@ class PFETerminateWrapper(gym.Wrapper):
                 lag = self._find_lagrangian()
                 if lag is not None:
                     total_penalty += float(np.dot(lag.lam, lag.cost_limit)) * self.lambda_steps
+            if self.horizon_penalty:
+                horizon_reward = -self.worst_step_cost / (1.0 - self.gamma)
+                total_penalty = max(total_penalty, float(reward) - horizon_reward)
             reward = float(reward) - total_penalty
             terminated = True
             info["pfe_terminated"] = True
             info["pfe_penalty"] = total_penalty
+        else:
+            self.worst_step_cost = max(self.worst_step_cost, -float(reward))
         return obs, reward, terminated, truncated, info
 
 
@@ -167,8 +181,16 @@ class LagrangianWrapper(gym.Wrapper):
         n_envs: int = 1,
         peak_weight: float = 0.2,
         pid_gains=None,
+        update_every: int = 0,
     ):
         super().__init__(env)
+        # > 0: update lambda every `update_every` steps from the step-averaged cost
+        # of that window, independently of episode boundaries (short episodes
+        # would otherwise trigger many updates). 0: update at every episode end.
+        self.update_every = int(update_every)
+        self.window_cost = np.zeros(3, dtype=np.float32)
+        self.window_cost_max = np.zeros(3, dtype=np.float32)
+        self.window_steps = 0
         base_env = env.unwrapped
         self.n_buses = base_env.simulator.N_bus
         self.v_tol = v_tolerance
@@ -241,8 +263,23 @@ class LagrangianWrapper(gym.Wrapper):
         info["lagrangian_penalty"] = penalty
         info["lambda"] = self.lam.copy()
 
-        if (terminated or truncated) and (self.lambda_lr > 0.0 or self.pid_gains is not None):
-            self._update_lambda()
+        updates_enabled = self.lambda_lr > 0.0 or self.pid_gains is not None
+        if updates_enabled and self.update_every > 0:
+            self.window_cost += costs
+            self.window_cost_max = np.maximum(self.window_cost_max, costs)
+            self.window_steps += 1
+            if self.window_steps >= self.update_every:
+                self._update_lambda(self.window_cost / self.window_steps,
+                                    self.window_cost_max, self.window_steps)
+                self.window_cost[:] = 0.0
+                self.window_cost_max[:] = 0.0
+                self.window_steps = 0
+        elif updates_enabled and (terminated or truncated):
+            if self.normalize and self.episode_length > 0:
+                avg_cost = self.episode_cost / self.episode_length
+            else:
+                avg_cost = self.episode_cost
+            self._update_lambda(avg_cost, self.episode_cost_max, self.episode_length)
 
         if terminated or truncated:
             avg_cost = (
@@ -265,16 +302,10 @@ class LagrangianWrapper(gym.Wrapper):
 
         return obs, modified_reward, terminated, truncated, info
 
-    def _update_lambda(self):
-
-        if self.normalize and self.episode_length > 0:
-            avg_cost = self.episode_cost / self.episode_length
-        else:
-            avg_cost = self.episode_cost
-        
+    def _update_lambda(self, avg_cost, peak_cost, n_steps):
         effective_cost = (
             (1.0 - self.peak_weight) * avg_cost
-            + self.peak_weight * self.episode_cost_max
+            + self.peak_weight * peak_cost
         )
 
         gradient = effective_cost - self.cost_limit
@@ -292,9 +323,9 @@ class LagrangianWrapper(gym.Wrapper):
                                0.0, self.lambda_max).astype(np.float32)
         
         print(
-            f"Episode ended | Steps: {self.episode_length}\n"
+            f"Lambda update | Steps: {n_steps}\n"
             f"Avg costs:    {avg_cost}  (limit: {self.cost_limit})\n"
-            f"Peak costs:   {self.episode_cost_max}\n"
+            f"Peak costs:   {peak_cost}\n"
             f"Effective:    {effective_cost}\n"
             f"Gradient:     {gradient}\n"
             f"New lambda:   {self.lam}\n"

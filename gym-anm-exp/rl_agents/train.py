@@ -67,6 +67,8 @@ from .hyperparameters import (
     PID_KP,
     PID_KI,
     PID_KD,
+    LAMBDA_UPDATE_STEPS,
+    PFE_HORIZON_PENALTY,
 )
 
 from .callbacks import ProgressBarManager, EvalCallback
@@ -171,6 +173,7 @@ def _make_train_env_factory(
                     peak_weight=peak_weight,
                     lambda_max=lambda_max,
                     pid_gains=pid_gains,
+                    update_every=LAMBDA_UPDATE_STEPS,
                 )
             elif use_bcp_reward:
                 # BCP energy‑only base + fixed penalty weights (no adaptive dual variables)
@@ -182,6 +185,7 @@ def _make_train_env_factory(
                 env,
                 penalty=pfe_penalty,
                 lambda_steps=pfe_lambda_steps if use_lagrangian else 0.0,
+                horizon_penalty=PFE_HORIZON_PENALTY,
             )
             env = Monitor(env, os.path.join(monitor_dir, f"train_{rank}.monitor.csv"))
             env.reset(seed=seed + rank)

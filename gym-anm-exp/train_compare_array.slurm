@@ -25,7 +25,9 @@ TRAIN_STEPS="${TRAIN_STEPS:-3000000}"
 EVAL_FREQ="${EVAL_FREQ:-200000}"
 EVAL_EPISODES="${EVAL_EPISODES:-3}"
 # PROFILE_FILE=none trains on the built-in ANM6Easy profiles (as in the paper).
-PROFILE_FILE="${PROFILE_FILE:-${PROJECT_DIR}/../../Datasets/processed/profiles_{split}.npz}"
+# Kept separate: the "}" of {split} would end a ${PROFILE_FILE:-...} expansion early.
+DEFAULT_PROFILE_FILE="${PROJECT_DIR}/../../Datasets/processed/profiles_{split}.npz"
+PROFILE_FILE="${PROFILE_FILE:-${DEFAULT_PROFILE_FILE}}"
 PROFILE_ARGS=()
 if [[ "${PROFILE_FILE}" != "none" ]]; then
     PROFILE_ARGS=(--profile-file "${PROFILE_FILE}")

@@ -86,6 +86,7 @@ LAMBDA_MAX = 10.0 # maximum allowed lambda value
 LAMBDA_INIT_V = 0.5 # initial lambda for new runs / resumes without a saved lambda
 LAMBDA_INIT_P = 3.5
 LAMBDA_INIT_Q = 0.5
+LAMBDA_UPDATE_STEPS = 2048 # update lambda every N training steps (0 = at every episode end, as before)
 LAMBDA_UPDATE = "gradient" # "gradient" or "pid"; set by --method lagrangian / lagrangian_pid
 
 # PID Lagrangian gains (Stooke et al., 2020), applied once per episode to the
@@ -113,13 +114,14 @@ PPO_ENT_COEF     = 0.01
 NORM_OBS = True
 NORM_REWARD = True
 CLIP_OBS = 10.0
-CLIP_REWARD = 50.0
+CLIP_REWARD = 1000.0 # high so the PFE crash penalty is not clipped (was 50)
 
 # Auxiliary wrappers
 BATTERY_CLIP_PENALTY = 10.0 # training penalty per unit of clipped battery action (0 in evaluation)
 FORECAST_HORIZON_STEPS = 0 # number of future steps to append (0 = disabled)
 PFE_TERMINATE_PENALTY = 50.0 # base penalty for PFE non‑convergence
 PFE_LAMBDA_STEPS = 200.0 # extra penalty scaling when Lagrangian is active
+PFE_HORIZON_PENALTY = True # crash costs at least the worst step cost over the discounted horizon
 
 # BCP‑reward mode (energy‑only base reward with fixed weights)
 USE_BCP_REWARD = False # overridable via CLI --bcp-reward
